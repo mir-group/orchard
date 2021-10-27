@@ -30,7 +30,8 @@ etot_calc_settings = {
     'cell': {},
     'electrons': {
         'mixing_mode': 'plain',
-        'diagonalization': 'david'
+        'diagonalization': 'david',
+        'conv_thr': 1e-7,
     }
 }
 settings_cats = list(etot_calc_settings.keys())
@@ -52,15 +53,34 @@ def settings_update(d, u):
             d[k] = u[k]
     return d
 
-def run_ase_calc(struct, pseudos, add_settings):
+def run_ase_calc(name, struct, pseudos, add_settings, profile=None):
+    calc_dir = os.path.join('calcs', name)
+    curr_dir = os.getcwd()
+    os.makedirs(calc_dir, exist_ok=True)
+    os.chdir(calc_dir)
     input_data = copy.deepcopy(etot_calc_settings)
     recursive_update(input_data, add_settings)
     print(input_data)
-    calc = Espresso(pseudopotentials=pseudos, input_data=input_data)
+    custom_xc = input_data['system'].get('input_dft') is not None
+    if custom_xc:
+        xc = input_data['system'].pop('input_dft')
+    calc = Espresso(pseudopotentials=pseudos, input_data=input_data,
+                    profile=profile)
     struct.calc = calc
     etot = struct.get_potential_energy()
+    if custom_xc:
+        print('init etot', etot)
+        input_data['control']['restart_mode'] = 'restart'
+        input_data['system']['input_dft'] = xc
+        print('input_dft', input_data['system']['input_dft'])
+        calc = Espresso(pseudopotentials=pseudos, input_data=input_data,
+                        profile=profile)
+        struct.calc = calc
+        etot = struct.get_potential_energy()
+        print('final etot', etot)
     fermi_level = calc.get_fermi_level()
     print(etot, fermi_level)
+    os.chdir(curr_dir)
     return etot
 
 #etot_calc_settings.update({'electrons': {'conv_thr': 1e-8}})
@@ -72,7 +92,7 @@ def read_smallmol_xyz(fname, box_size=10):
     atoms.set_cell([box_size]*3)
     return atoms
 
-def get_atom(el, box_size=10):
+def get_atom(el, box_size=5):
     return Atoms(el, cell=[box_size]*3)
 
 
@@ -85,7 +105,7 @@ def lih_test():
     }
     add_settings = {
         'electrons': {
-            'conv_thr': 1e-7
+            'conv_thr': 1e-9
         },
         'system': {
             'ecutwfc': 40
@@ -96,7 +116,7 @@ def lih_test():
     #pseudos = {'H': 'H_ONCV_PBE-1.2.upf'}
     add_settings = {
         'electrons': {
-            'conv_thr': 1e-7
+            'conv_thr': 1e-9
         },
         'system': {
             'ecutwfc': 40,
@@ -118,7 +138,7 @@ def lih_test():
             'cider_param_file': 'params_cider',
         },
         'electrons': {
-            'conv_thr': 1e-7,
+            'conv_thr': 1e-9,
         },
         'system': {
             'ecutwfc': 40,
@@ -218,7 +238,8 @@ def hf_test(encut=40):
     e_li = run_ase_calc(struct, pseudos, add_settings)
     print('AE', e_h+e_li-e_lih)
 
-def ae_test(mol_name, pseudo_dir, encut=40, restricted=True, extra_settings=None):
+def qe_ae_test(mol_name, pseudo_dir, encut=40, restricted=True,
+            extra_settings=None, profile=None):
     fname = os.path.join(os.environ.get('ACCDB'), 'Geometries', '{}.xyz'.format(mol_name))
     struct = read_smallmol_xyz(fname)
     els = struct.get_chemical_symbols()
@@ -243,7 +264,7 @@ def ae_test(mol_name, pseudo_dir, encut=40, restricted=True, extra_settings=None
     }
     if extra_settings is not None:
         add_settings = settings_update(add_settings, extra_settings)
-    e_mol = run_ase_calc(struct, pseudos, add_settings)
+    e_mol = run_ase_calc(mol_name, struct, pseudos, add_settings, profile=profile)
     ae = -e_mol
     for el in set(els):
         struct = get_atom(el)
@@ -264,7 +285,8 @@ def ae_test(mol_name, pseudo_dir, encut=40, restricted=True, extra_settings=None
         }
         if extra_settings is not None:
             add_settings = settings_update(add_settings, extra_settings)
-        e_at = run_ase_calc(struct, pseudos, add_settings)
+        e_at = run_ase_calc('{}_{}'.format(mol_name, el), struct, pseudos,
+                            add_settings, profile=profile)
         ae += formula[Z] * e_at
 
     print('AE', ae)
@@ -281,12 +303,12 @@ if __name__ == '__main__':
             'use_cider': True
         }
     }
-    #ae_test('DiPol_HF', '/home/kyle/sg15_pseudo', encut=80)
+    #qe_ae_test('DiPol_HF', '/home/kyle/sg15_pseudo', encut=80)
     #print()
-    #ae_test('DiPol_H2O', '/home/kyle/sg15_pseudo', encut=80)
+    #qe_ae_test('DiPol_H2O', '/home/kyle/sg15_pseudo', encut=80)
     print()
-    ae_test('DiPol_H2O', '/home/kyle/sg15_pseudo', encut=80,
+    qe_ae_test('DiPol_H2O', '/home/kyle/sg15_pseudo', encut=80,
             extra_settings=cider_settings)
     print()
-    ae_test('DiPol_HF', '/home/kyle/sg15_pseudo', encut=80,
+    qe_ae_test('DiPol_HF', '/home/kyle/sg15_pseudo', encut=80,
             extra_settings=cider_settings)
