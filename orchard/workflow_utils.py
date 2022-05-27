@@ -1,0 +1,48 @@
+import os
+import yaml
+from ase import Atoms
+
+config_file = os.path.expanduser('~/.orchard_config.yaml')
+if os.path.exists(config_file):
+    with open(config_file, "r") as f:
+        settings = yaml.load(f, Loader=yaml.Loader)
+    MLDFTDB_ROOT = settings['MLDFTDB_ROOT']
+    ACCDB_ROOT = settings['ACCDB_ROOT']
+else:
+    MLDFTDB_ROOT = None
+    ACCDB_ROOT = None
+
+def get_functional_db_name(functional):
+    functional = functional.replace(',', '_')
+    functional = functional.replace(' ', '_')
+    functional = functional.upper()
+    return functional
+
+def get_save_dir(root, calc_type, basis, mol_id, functional=None):
+    if functional is not None:
+        calc_type = calc_type + '/' + get_functional_db_name(functional)
+    return os.path.join(root, calc_type, basis, mol_id)
+
+def read_accdb_structure(struct_id):
+    fname = '{}.xyz'.format(os.path.join(ACCDB_ROOT, 'Geometries', struct_id))
+    with open(fname, 'r') as f:
+        #print(fname)
+        lines = f.readlines()
+        natom = int(lines[0])
+        charge_and_spin = lines[1].split()
+        charge = int(charge_and_spin[0].strip().strip(','))
+        spin = int(charge_and_spin[1].strip().strip(',')) - 1
+        symbols = []
+        coords = []
+        for i in range(natom):
+            line = lines[2+i]
+            symbol, x, y, z = line.split()
+            if symbol.isdigit():
+                symbol = int(symbol)
+            else:
+                symbol = symbol[0] + symbol[1:].lower()
+            symbols.append(symbol)
+            coords.append([x,y,z])
+        struct = Atoms(symbols, positions = coords)
+        #print(charge, spin, struct)
+    return struct, os.path.join('ACCDB', struct_id), spin, charge
