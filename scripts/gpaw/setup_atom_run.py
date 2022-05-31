@@ -1,4 +1,4 @@
-from orchard.gpaw_tasks import make_etot_firework
+from orchard.gpaw_tasks import make_etot_firework, make_etot_firework_restart
 from orchard.workflow_utils import MLDFTDB_ROOT, ACCDB_ROOT, read_accdb_structure
 import os, sys
 import copy
@@ -32,6 +32,16 @@ atoms = bulk('Zn')
 fw = make_etot_firework(
 	atoms, settings, 'CIDER', 'METALS/Zn', MLDFTDB_ROOT, nproc=4,
 )
+'''
+new_settings = {
+	'control' : {
+		'cider' : cider_settings,
+	}
+}
+fw = make_etot_firework_restart(
+	new_settings, 'CIDER', 'METALS/Zn', 'PBE', MLDFTDB_ROOT, nproc=4,
+)
+'''
 print(dir(fw))
 fwa = fw.tasks[0].run_task({})
 fwa = fw.tasks[1].run_task(fwa.update_spec)

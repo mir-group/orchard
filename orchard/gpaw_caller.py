@@ -1,7 +1,7 @@
 from gpaw import GPAW, PW
 import copy, os
 
-def setup_gpaw(settings_inp):
+def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
@@ -11,9 +11,22 @@ def setup_gpaw(settings_inp):
         settings['xc'] = CiderGGAPASDW.from_joblib(
             fname, **cider_settings
         )
-    if control['mode'] != 'fd':
+    if control.get('mode') is None:
+        if calc is None:
+            raise ValueError('Need mode or calc')
+    elif control['mode'] != 'fd':
         settings['mode'] = PW(control['mode'])
-    return GPAW(**settings)
+
+    if calc is None:
+        calc = GPAW(**settings)
+    else:
+        calc.set(**settings)
+    
+    if settings.get('txt') is None:
+        settings_inp['calc']['txt'] = 'calc.txt'
+        calc.set(txt=settings_inp['calc']['txt'])
+
+    return calc
 
 def call_gpaw():
     import yaml
@@ -25,8 +38,15 @@ def call_gpaw():
 
     with open(sys.argv[1], 'r') as f:
         settings = yaml.load(f, Loader=yaml.Loader)
-    atoms = ase.io.read(sys.argv[2])
-    atoms.calc = setup_gpaw(settings)
+
+    if sys.argv[2].endswith('.gpw'):
+        from gpaw import restart
+        atoms, calc = restart(sys.argv[2])
+        setup_gpaw(settings, calc=calc)
+    else:
+        atoms = ase.io.read(sys.argv[2])
+        atoms.calc = setup_gpaw(settings)
+
     try:
         e_tot = atoms.get_potential_energy()
         converged = True

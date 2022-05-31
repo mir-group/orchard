@@ -28,7 +28,7 @@ DEFAULT_GPAW_CONTROL_SETTINGS = {
 }
 
 
-def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None):
+def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=False):
     if nproc is None:
         nproc = 1
     if cmd is not None:
@@ -37,19 +37,23 @@ def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None):
         cmd = 'python {call_script} {settings_path} {struct_path}'
     else:
         cmd = 'mpirun -np {nproc} python {call_script} {settings_path} {struct_path}'
-    settings = {
-        'calc': copy.deepcopy(DEFAULT_GPAW_CALC_SETTINGS),
-        'control': copy.deepcopy(DEFAULT_GPAW_CONTROL_SETTINGS),
-    }
-    settings['calc'].update(settings_inp['calc'])
-    settings['control'].update(settings_inp['control'])
-    struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
+
+    if update_only:
+        settings = {'calc': {}, 'control': {'save_calc': False}}
+    else:
+        settings = {
+            'calc': copy.deepcopy(DEFAULT_GPAW_CALC_SETTINGS),
+            'control': copy.deepcopy(DEFAULT_GPAW_CONTROL_SETTINGS),
+        }
+    if 'calc' in settings_inp.keys():
+        settings['calc'].update(settings_inp['calc'])
+    if 'control' in settings_inp.keys():
+        settings['control'].update(settings_inp['control'])
     settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
     if settings['control']['save_calc']:
         settings['control']['save_calc'] = os.path.abspath('./gpaw_output_tmp.gpw')
     else:
         settings['control']['save_calc'] = None
-    ase.io.write(struct_path, struct)
     with open(settings_path, 'w') as f:
         yaml.dump(settings, f)
     cmd = cmd.format(
@@ -64,18 +68,20 @@ def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None):
 class GPAWSinglePointSCF(FiretaskBase):
 
     required_params = ['struct', 'settings', 'method_name', 'system_id']
-    optional_params = ['require_converged', 'method_description', 'nproc', 'cmd', 'save_calc']
+    optional_params = ['require_converged', 'method_description', 'nproc', 'cmd']
 
     def run_task(self, fw_spec):
         if self.get('require_converged') is None:
             self['require_converged'] = True
+        struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
+        ase.io.write(struct_path, self['struct'])
         cmd, save_file, settings = setup_gpaw_cmd(
-            self['struct'],
+            struct_path,
             self['settings'],
             nproc=self.get('nproc'),
             cmd=self.get('cmd'),
+            update_only=False,
         )
-        save_calc = self.get('save_calc') or False
 
         start_time = time.monotonic()
         proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -99,6 +105,51 @@ class GPAWSinglePointSCF(FiretaskBase):
             'save_file' : save_file,
             'settings' : settings,
             'struct': self['struct'],
+            'system_id' : self['system_id'],
+            'wall_time' : stop_time - start_time,
+        }
+        return FWAction(update_spec=update_spec)
+
+
+@explicit_serialize
+class GPAWSinglePointRestart(FiretaskBase):
+
+    required_params = ['new_settings', 'new_method_name', 'restart_file', 'system_id']
+    optional_params = ['require_converged', 'new_method_description', 'nproc', 'cmd']
+
+    def run_task(self, fw_spec):
+        if self.get('require_converged') is None:
+            self['require_converged'] = True
+        cmd, save_file, settings = setup_gpaw_cmd(
+            self['restart_file'],
+            self['new_settings'],
+            nproc=self.get('nproc'),
+            cmd=self.get('cmd'),
+            update_only=True,
+        )
+
+        start_time = time.monotonic()
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.wait()
+        if proc.returncode != 0:
+            print(proc.stderr.read().decode())
+            raise RuntimeError('GPAW Calculation Failed')
+        stop_time = time.monotonic()
+
+        with open('gpaw_outdata.tmp', 'r') as f:
+            results = yaml.load(f, Loader=yaml.Loader)
+        if (not results['converged']) and require_converged:
+            raise RuntimeError('GPAW calculation did not converge!')
+
+        update_spec = {
+            'e_tot': results['e_tot'],
+            'converged': results['converged'],
+            'logfile' : results['logfile'],
+            'method_name': self['new_method_name'],
+            'method_description': self.get('new_method_description'),
+            'save_file' : save_file,
+            'settings' : settings,
+            'struct': None,
             'system_id' : self['system_id'],
             'wall_time' : stop_time - start_time,
         }
@@ -160,3 +211,22 @@ def make_etot_firework(
     t2 = SaveGPAWResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
     return Firework([t1, t2], name=name)
 
+
+def make_etot_firework_restart(new_settings, new_method_name, system_id, old_method_name,
+                               save_root_dir, no_overwrite=False,
+                               require_converged=True, new_method_description=None,
+                               nproc=None, cmd=None, name=None):
+    restart_file = os.path.join(get_save_dir(
+        save_root_dir,
+        'PW-KS',
+        '',
+        system_id,
+        functional=old_method_name,
+    ), 'calc.gpw')
+    t1 = GPAWSinglePointRestart(new_settings=new_settings, new_method_name=new_method_name,
+                                restart_file=restart_file, system_id=system_id,
+                                require_converged=require_converged,
+                                new_method_description=new_method_description,
+                                nproc=nproc, cmd=cmd)
+    t2 = SaveGPAWResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
+    return Firework([t1, t2], name=name)
