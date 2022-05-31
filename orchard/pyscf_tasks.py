@@ -34,8 +34,8 @@ DEFAULT_PYSCF_SETTINGS = {
     'grids': {},
 }
 
-def get_pyscf_settings(settings_inp):
-    settings = copy.deepcopy(DEFAULT_PYSCF_SETTINGS)
+def get_pyscf_settings(settings_inp, default_settings=DEFAULT_PYSCF_SETTINGS):
+    settings = copy.deepcopy(default_settings)
     inp_keys = list(settings_inp.keys())
     for k in list(settings.keys()):
         if k in inp_keys:
@@ -77,6 +77,68 @@ class SCFCalc(FiretaskBase):
 
 
 @explicit_serialize
+class LoadSCFCalc(FiretaskBase):
+
+    required_params = ['save_root_dir', 'method_name', 'basis', 'system_id']
+
+    def run_task(self, fw_spec):
+        load_dir = get_save_dir(
+            self['save_root_dir'],
+            'KS',
+            self['basis'],
+            self['system_id'],
+            functional=self['method_name'],
+        )
+        hdf5file = os.path.join(load_dir, 'data.hdf5')
+        in_file = os.path.join(load_dir, 'run_info.yaml')
+        with open(in_file, 'r') as f:
+            in_data = yaml.load(f, Loader=yaml.Loader)
+        calc = pyscf_caller.setup_calc(in_data['struct'], in_data['settings'])
+        calc.e_tot = lib.chkfile.load(hdf5file, 'calc/e_tot')
+        calc.mo_coeff = lib.chkfile.load(hdf5file, 'calc/mo_coeff')
+        calc.mo_energy = lib.chkfile.load(hdf5file, 'calc/mo_energy')
+        calc.mo_occ = lib.chkfile.load(hdf5file, 'calc/mo_occ')
+        update_spec = {
+            'basis' : self['basis'],
+            'calc' : calc,
+            'method_name' : self['method_name'],
+            'settings' : in_data['settings'],
+            'struct' : in_data['struct'],
+            'system_id' : self['system_id'],
+        }
+        return FWAction(update_spec=update_spec)
+
+
+@explicit_serialize
+class SCFCalcFromRestart(FiretaskBase):
+
+    required_params = ['new_settings', 'new_method_name']
+    optional_params = ['require_converged', 'new_method_description']
+
+    def run_task(self, fw_spec):
+        settings = get_pyscf_settings(self['new_settings'], default_settings=fw_spec['settings'])
+        start_time = time.monotonic()
+        calc = pyscf_caller.setup_calc(fw_spec['struct'], settings)
+        calc.kernel(dm0=fw_spec['calc'].make_rdm1())
+        stop_time = time.monotonic()
+        if self.get('require_converged') is None:
+            self['require_converged'] = True
+        if (not calc.converged) and self['require_converged']:
+            assert RuntimeError("SCF calculation did not converge!")
+        update_spec = {
+            'calc' : calc,
+            'e_tot': calc.e_tot,
+            'converged': calc.converged,
+            'method_name': self['new_method_name'],
+            'method_description': self.get('new_method_description'),
+            'pyscf_atoms' : calc.mol._atom,
+            'settings' : settings,
+            'wall_time' : stop_time - start_time,
+        }
+        return FWAction(update_spec=update_spec)
+
+
+@explicit_serialize
 class SaveSCFResults(FiretaskBase):
 
     required_params = ['save_root_dir']
@@ -108,6 +170,7 @@ class SaveSCFResults(FiretaskBase):
             'struct': fw_spec['struct'],
             'settings': fw_spec['settings'],
             'e_tot': fw_spec['e_tot'],
+            'e_tot_readable': float(fw_spec['e_tot']), # since e_tot is numpy double scalar
             'converged': fw_spec['converged'],
             'conv_tol': calc.conv_tol,
             'wall_time': fw_spec['wall_time'],
@@ -124,10 +187,27 @@ def make_etot_firework(
             struct, settings, method_name, system_id,
             save_root_dir, no_overwrite=False,
             require_converged=True, method_description=None,
-            name=None,
-        ):
-    t1 = SCFCalc(struct=struct, settings=settings, method_name=method_name, system_id=system_id,
-                 require_converged=require_converged, method_description=method_description)
+            name=None):
+    t1 = SCFCalc(
+            struct=struct, settings=settings, method_name=method_name, system_id=system_id,
+            require_converged=require_converged, method_description=method_description
+        )
     t2 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
     return Firework([t1, t2], name=name)
+
+
+def make_etot_firework_restart(new_settings, new_method_name, system_id,
+                               old_basis, old_method_name,
+                               save_root_dir, no_overwrite=False,
+                               require_converged=True, new_method_description=None,
+                               name=None):
+    t1 = LoadSCFCalc(
+        save_root_dir=save_root_dir, method_name=old_method_name,
+        basis=old_basis, system_id=system_id
+    )
+    t2 = SCFCalcFromRestart(new_settings=new_settings, new_method_name=new_method_name,
+                            require_converged=require_converged,
+                            new_method_description=new_method_description)
+    t3 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
+    return Firework([t1, t2, t3], name=name)
 

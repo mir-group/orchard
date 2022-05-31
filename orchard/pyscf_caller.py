@@ -14,6 +14,7 @@ All PySCF settings supported:
         'df_basis': None or str (basis name)
         'radi_method': None or str (func name)
         'remove_linear_dep': bool,
+        'mol_format': str
     },
     'mol' : {
         'basis': str, default 'def2-qzvppd'
@@ -60,6 +61,7 @@ def setup_calc(atoms, settings):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mols)
     else:
         from mldftdat.dft.ri_cider import setup_cider_calc
+        import joblib
         calc = setup_cider_calc(
             mol,
             joblib.load(settings['cider']['mlfunc_filename']),
