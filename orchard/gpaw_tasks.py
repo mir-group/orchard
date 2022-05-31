@@ -2,49 +2,87 @@ from fireworks import FiretaskBase, FWAction, Firework
 from fireworks.utilities.fw_utilities import explicit_serialize
 from fireworks.utilities.fw_serializers import recursive_dict
 
-from orchard import gpaw_caller
 from orchard.workflow_utils import get_save_dir
 
-from gpaw import KohnShamConvergenceError
-
-import time, yaml, os, subprocess
+import time, yaml, os, subprocess, shutil, sys, shlex
 import ase.io
 
-GPAW_CALL_SCRIPT = gpaw_caller.__file__
+import copy
+
+GPAW_CALL_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_caller')
+
+DEFAULT_GPAW_CALC_SETTINGS = {
+    'h': 0.15,
+    'xc': 'PBE',
+    'txt': 'calc.txt',
+    'maxiter': 200,
+    'verbose': True,
+    'spinpol': False,
+    'kpts': (1,1,1),
+    'hund': False,
+}
+DEFAULT_GPAW_CONTROL_SETTINGS = {
+    'save_calc' : False,
+    'mode' : 1000.0,
+    'cider' : None,
+}
+
+
+def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None):
+    if nproc is None:
+        nproc = 1
+    if cmd is not None:
+        pass
+    elif nproc == 1:
+        cmd = 'python {call_script} {settings_path} {struct_path}'
+    else:
+        cmd = 'mpirun -np {nproc} python {call_script} {settings_path} {struct_path}'
+    settings = {
+        'calc': copy.deepcopy(DEFAULT_GPAW_CALC_SETTINGS),
+        'control': copy.deepcopy(DEFAULT_GPAW_CONTROL_SETTINGS),
+    }
+    settings['calc'].update(settings_inp['calc'])
+    settings['control'].update(settings_inp['control'])
+    struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
+    settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
+    if settings['control']['save_calc']:
+        settings['control']['save_calc'] = os.path.abspath('./gpaw_output_tmp.gpw')
+    else:
+        settings['control']['save_calc'] = None
+    ase.io.write(struct_path, struct)
+    with open(settings_path, 'w') as f:
+        yaml.dump(settings, f)
+    cmd = cmd.format(
+        nproc=nproc,
+        call_script=GPAW_CALL_SCRIPT,
+        settings_path=settings_path,
+        struct_path=struct_path,
+    )
+    return cmd, settings['control']['save_calc'], settings
 
 @explicit_serialize
 class GPAWSinglePointSCF(FiretaskBase):
 
     required_params = ['struct', 'settings', 'method_name', 'system_id']
-    optional_params = ['require_converged', 'method_description', 'nproc', 'cmd']
+    optional_params = ['require_converged', 'method_description', 'nproc', 'cmd', 'save_calc']
 
     def run_task(self, fw_spec):
         if self.get('require_converged') is None:
             self['require_converged'] = True
-        if self.get('nproc') is None:
-            nproc = 1
-        else:
-            nproc = self['nproc']
-        if self.get('cmd') is not None:
-            cmd = self['cmd']
-        elif nproc == 1:
-            cmd = 'python {call_script} {settings_path} {struct_path}'
-        else:
-            cmd = 'mpirun -np {nproc} python {call_script} {settings_path} {struct_path}'
-        struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
-        settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
-        ase.io.write(struct_path, self['struct'])
-        with open(settings_path, 'w') as f:
-            yaml.dump(self['settings'], f)
-        cmd = cmd.format(
-            nproc=nproc,
-            call_script=GPAW_CALL_SCRIPT,
-            settings_path=settings_path,
-            struct_path=struct_path,
+        cmd, save_file, settings = setup_gpaw_cmd(
+            self['struct'],
+            self['settings'],
+            nproc=self.get('nproc'),
+            cmd=self.get('cmd'),
         )
+        save_calc = self.get('save_calc') or False
 
         start_time = time.monotonic()
-        subprocess.call(cmd, shell=True)
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.wait()
+        if proc.returncode != 0:
+            print(proc.stderr.read().decode())
+            raise RuntimeError('GPAW Calculation Failed')
         stop_time = time.monotonic()
 
         with open('gpaw_outdata.tmp', 'r') as f:
@@ -55,9 +93,11 @@ class GPAWSinglePointSCF(FiretaskBase):
         update_spec = {
             'e_tot': results['e_tot'],
             'converged': results['converged'],
+            'logfile' : results['logfile'],
             'method_name': self['method_name'],
             'method_description': self.get('method_description'),
-            'settings' : self['settings'],
+            'save_file' : save_file,
+            'settings' : settings,
             'struct': self['struct'],
             'system_id' : self['system_id'],
             'wall_time' : stop_time - start_time,
@@ -96,6 +136,11 @@ class SaveGPAWResults(FiretaskBase):
         out_file = os.path.join(save_dir, 'run_info.yaml')
         with open(out_file, 'w') as f:
             yaml.dump(out_data, f)
+
+        if fw_spec['logfile'] is not None:
+            shutil.copyfile(fw_spec['logfile'], os.path.join(save_dir, 'log.txt'))
+        if fw_spec['save_file'] is not None:
+            shutil.copyfile(fw_spec['save_file'], os.path.join(save_dir, 'calc.gpw'))
 
         return FWAction(stored_data={'save_dir': save_dir})
 

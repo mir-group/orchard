@@ -10,6 +10,39 @@ from pyscf import lib
 import time
 import yaml
 import os
+import copy
+
+
+DEFAULT_PYSCF_SETTINGS = {
+    'control' : {
+        'mol_format': 'xyz',
+        'spinpol': False,
+        'density_fit': False,
+        'dftd3': False,
+        'df_basis': None,
+        'remove_linear_dep': True,
+    },
+    'mol' : {
+        'basis': 'def2-qzvppd',
+        'spin': 0,
+        'charge': 0,
+        'verbose': 3,
+    },
+    'calc' : {
+        'xc': 'PBE',
+    },
+    'grids': {},
+}
+
+def get_pyscf_settings(settings_inp):
+    settings = copy.deepcopy(DEFAULT_PYSCF_SETTINGS)
+    inp_keys = list(settings_inp.keys())
+    for k in list(settings.keys()):
+        if k in inp_keys:
+            settings[k].update(settings_inp[k])
+    if 'cider' in inp_keys:
+        settings['cider'] = settings_inp['cider']
+    return settings
 
 
 @explicit_serialize
@@ -19,8 +52,9 @@ class SCFCalc(FiretaskBase):
     optional_params = ['require_converged', 'method_description']
 
     def run_task(self, fw_spec):
+        settings = get_pyscf_settings(self['settings'])
         start_time = time.monotonic()
-        calc = pyscf_caller.setup_calc(self['struct'], self['settings'])
+        calc = pyscf_caller.setup_calc(self['struct'], settings)
         calc.kernel()
         stop_time = time.monotonic()
         if self.get('require_converged') is None:
@@ -34,7 +68,7 @@ class SCFCalc(FiretaskBase):
             'method_name': self['method_name'],
             'method_description': self.get('method_description'),
             'pyscf_atoms' : calc.mol._atom,
-            'settings' : self['settings'],
+            'settings' : settings,
             'struct': self['struct'],
             'system_id' : self['system_id'],
             'wall_time' : stop_time - start_time,

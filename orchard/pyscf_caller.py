@@ -1,4 +1,3 @@
-import copy
 from pyscf import gto, dft, scf
 
 CALC_TYPES = {
@@ -41,36 +40,8 @@ All PySCF settings supported:
     }
 }
 '''
-DEFAULT_SETTINGS = {
-    'control' : {
-        'mol_format': 'xyz',
-        'spinpol': False,
-        'density_fit': False,
-        'dftd3': False,
-        'df_basis': None,
-        'remove_linear_dep': True,
-    },
-    'mol' : {
-        'basis': 'def2-qzvppd',
-        'spin': 0,
-        'charge': 0,
-        'verbose': 3,
-    },
-    'calc' : {
-        'xc': 'PBE',
-    },
-    'grids': {},
-}
 
-def setup_calc(atoms, settings_inp):
-    settings = copy.deepcopy(DEFAULT_SETTINGS)
-    inp_keys = list(settings_inp.keys())
-    for k in list(settings.keys()):
-        elif k in inp_keys:
-            settings[k].update(settings_inp[k])
-    if 'cider' in inp_keys:
-        settings['cider'] = settings_inp['cider']
-
+def setup_calc(atoms, settings):
     mol = gto.Mole()
     fmt = settings['control']['mol_format']
     if fmt == 'xyz_file':

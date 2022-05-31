@@ -14,8 +14,14 @@ cider_settings = {
 	'debug': False,
 }
 settings = {
-	'kpts': (12, 12, 12),
-	'cider': cider_settings,
+	'calc': {
+		'kpts': (12, 12, 12),
+	},
+	'control': {
+		'cider': cider_settings,
+		'save_calc': True,
+		'mode': 1000
+	},
 }
 
 #atoms = Atoms('Ne')
@@ -24,7 +30,7 @@ settings = {
 atoms = bulk('Zn')
 
 fw = make_etot_firework(
-	atoms, settings, 'CIDER', 'ATOMS/Ne', MLDFTDB_ROOT
+	atoms, settings, 'CIDER', 'METALS/Zn', MLDFTDB_ROOT, nproc=4,
 )
 print(dir(fw))
 fwa = fw.tasks[0].run_task({})

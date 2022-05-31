@@ -1,30 +1,18 @@
 from gpaw import GPAW, PW
-import copy
-
-DEFAULT_SETTINGS = {
-    'h': 0.15,
-    'xc': 'PBE',
-    'mode': 1000.0,
-    'txt': 'calc.txt',
-    'maxiter': 200,
-    'verbose': True,
-    'spinpol': False,
-    'kpts': (1,1,1),
-    'hund': False,
-}
+import copy, os
 
 def setup_gpaw(settings_inp):
-    settings = copy.deepcopy(DEFAULT_SETTINGS)
-    settings.update(settings_inp)
-    if settings.get('cider') is not None:
+    settings = settings_inp['calc']
+    control = settings_inp['control']
+    if control.get('cider') is not None:
         from mldftdat.gpaw.cider_paw import CiderGGAPASDW
-        cider_settings = settings.pop('cider')
+        cider_settings = control['cider']
         fname = cider_settings.pop('fname')
         settings['xc'] = CiderGGAPASDW.from_joblib(
             fname, **cider_settings
         )
-    if settings['mode'] != 'fd':
-        settings['mode'] = PW(settings['mode'])
+    if control['mode'] != 'fd':
+        settings['mode'] = PW(control['mode'])
     return GPAW(**settings)
 
 def call_gpaw():
@@ -48,6 +36,16 @@ def call_gpaw():
     with paropen('gpaw_outdata.tmp', 'w') as f:
         f.write('e_tot : {}\n'.format(e_tot / Ha))
         f.write('converged : {}\n'.format(converged))
+        txtfile = settings['calc'].get('txt')
+        if txtfile is not None:
+            assert os.path.exists(txtfile)
+            f.write('logfile : {}\n'.format(os.path.abspath(txtfile)))
+        else:
+            f.write('logfile : None\n')
+
+    if settings['control'].get('save_calc') is not None:
+        assert settings['control']['save_calc'].endswith('.gpw')
+        atoms.calc.write(settings['control']['save_calc'], mode='all')
 
 
 if __name__ == '__main__':
