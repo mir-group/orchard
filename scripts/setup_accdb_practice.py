@@ -54,20 +54,28 @@ for struct, mol_id, spin, charge in struct_dat:
     settings = copy.deepcopy(EXTRA_SETTINGS)
     settings['mol']['spin'] = spin
     settings['mol']['charge'] = charge
+    '''
     fw_lst.append(make_etot_firework(
         struct, settings, method_name, mol_id,
         MLDFTDB_ROOT, name='{}_{}'.format(method_name, mol_id)
     ))
+    '''
+    fw_lst.append(make_etot_firework_restart(
+        {'cider': CIDER_SETTINGS}, 'CIDERv2', 'GMTKN55/BH76_C2H5',
+        'def2-qzvppd', 'PBE',
+        MLDFTDB_ROOT,
+        new_method_description={'hello': 'world'},
+        name='{}_{}'.format(method_name, mol_id)
+    ))
 
-#print(dir(fw_lst[0]))
-#fw = fw_lst[0]
-#spec = {}
-#for task_num in range(len(fw.tasks)):
-#    fwa = fw.tasks[task_num].run_task(spec)
-#    spec.update(fwa.update_spec)
-#exit()
+print(dir(fw_lst[0]))
+fw = fw_lst[0]
+spec = {}
+for task_num in range(len(fw.tasks)):
+    fwa = fw.tasks[task_num].run_task(spec)
+    spec.update(fwa.update_spec)
+exit()
 
-from fireworks import LaunchPad
 launchpad = LaunchPad.auto_load()
-for fw in fw_lst[:1]:
+for fw in fw_lst:
     launchpad.add_wf(fw)
