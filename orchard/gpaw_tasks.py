@@ -6,6 +6,7 @@ from orchard.workflow_utils import get_save_dir
 
 import time, yaml, os, subprocess, shutil, sys, shlex
 import ase.io
+from ase import Atoms
 
 import copy
 
@@ -74,7 +75,7 @@ class GPAWSinglePointSCF(FiretaskBase):
         if self.get('require_converged') is None:
             self['require_converged'] = True
         struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
-        ase.io.write(struct_path, self['struct'])
+        ase.io.write(struct_path, Atoms.fromdict(self['struct']))
         cmd, save_file, settings = setup_gpaw_cmd(
             struct_path,
             self['settings'],
@@ -203,6 +204,7 @@ def make_etot_firework(
             nproc=None, cmd=None,
             name=None,
         ):
+    struct = struct.todict()
     t1 = GPAWSinglePointSCF(
         struct=struct, settings=settings, method_name=method_name, system_id=system_id,
         require_converged=require_converged, method_description=method_description,

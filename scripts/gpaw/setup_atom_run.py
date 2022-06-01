@@ -28,9 +28,9 @@ settings = {
 #atoms.center(vacuum=3)
 #print(atoms.pbc)
 atoms = bulk('Zn')
-
+'''
 fw = make_etot_firework(
-	atoms, settings, 'CIDER', 'METALS/Zn', MLDFTDB_ROOT, nproc=4,
+	atoms, settings, 'PBE', 'METALS/Zn', MLDFTDB_ROOT, nproc=4,
 )
 '''
 new_settings = {
@@ -41,7 +41,7 @@ new_settings = {
 fw = make_etot_firework_restart(
 	new_settings, 'CIDER', 'METALS/Zn', 'PBE', MLDFTDB_ROOT, nproc=4,
 )
-'''
+
 print(dir(fw))
 fwa = fw.tasks[0].run_task({})
 fwa = fw.tasks[1].run_task(fwa.update_spec)

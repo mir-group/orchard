@@ -6,6 +6,7 @@ from orchard import pyscf_caller
 from orchard.workflow_utils import get_save_dir
 
 from pyscf import lib
+from ase import Atoms
 
 import time
 import yaml
@@ -54,7 +55,7 @@ class SCFCalc(FiretaskBase):
     def run_task(self, fw_spec):
         settings = get_pyscf_settings(self['settings'])
         start_time = time.monotonic()
-        calc = pyscf_caller.setup_calc(self['struct'], settings)
+        calc = pyscf_caller.setup_calc(Atoms.fromdict(self['struct']), settings)
         calc.kernel()
         stop_time = time.monotonic()
         if self.get('require_converged') is None:
@@ -93,7 +94,7 @@ class LoadSCFCalc(FiretaskBase):
         in_file = os.path.join(load_dir, 'run_info.yaml')
         with open(in_file, 'r') as f:
             in_data = yaml.load(f, Loader=yaml.Loader)
-        calc = pyscf_caller.setup_calc(in_data['struct'], in_data['settings'])
+        calc = pyscf_caller.setup_calc(Atoms.fromdict(in_data['struct']), in_data['settings'])
         calc.e_tot = lib.chkfile.load(hdf5file, 'calc/e_tot')
         calc.mo_coeff = lib.chkfile.load(hdf5file, 'calc/mo_coeff')
         calc.mo_energy = lib.chkfile.load(hdf5file, 'calc/mo_energy')
@@ -118,7 +119,7 @@ class SCFCalcFromRestart(FiretaskBase):
     def run_task(self, fw_spec):
         settings = get_pyscf_settings(self['new_settings'], default_settings=fw_spec['settings'])
         start_time = time.monotonic()
-        calc = pyscf_caller.setup_calc(fw_spec['struct'], settings)
+        calc = pyscf_caller.setup_calc(Atoms.fromdict(fw_spec['struct']), settings)
         calc.kernel(dm0=fw_spec['calc'].make_rdm1())
         stop_time = time.monotonic()
         if self.get('require_converged') is None:
@@ -188,6 +189,7 @@ def make_etot_firework(
             save_root_dir, no_overwrite=False,
             require_converged=True, method_description=None,
             name=None):
+    struct = struct.todict()
     t1 = SCFCalc(
             struct=struct, settings=settings, method_name=method_name, system_id=system_id,
             require_converged=require_converged, method_description=method_description
