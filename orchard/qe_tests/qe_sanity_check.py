@@ -1,6 +1,6 @@
-from fireworks import FiretaskBase, FWAction
-from fireworks.utilities.fw_utilities import explicit_serialize
-from fireworks.utilities.fw_serializers import recursive_dict
+#from fireworks import FiretaskBase, FWAction
+#from fireworks.utilities.fw_utilities import explicit_serialize
+#from fireworks.utilities.fw_serializers import recursive_dict
 
 from ase.build import bulk
 from ase.calculators.espresso import Espresso
