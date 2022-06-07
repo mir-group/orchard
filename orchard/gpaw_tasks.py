@@ -31,13 +31,22 @@ DEFAULT_GPAW_CONTROL_SETTINGS = {
 
 def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=False):
     if nproc is None:
-        nproc = 1
+        if os.environ.get('NPROC_GPAW') is None:
+            nproc = 1
+        else:
+            nproc = os.environ['NPROC_GPAW']
     if cmd is not None:
         pass
     elif nproc == 1:
         cmd = 'python {call_script} {settings_path} {struct_path}'
     else:
         cmd = 'mpirun -np {nproc} python {call_script} {settings_path} {struct_path}'
+
+    #logfile = settings_inp['calc'].get('txt') or DEFAULT_GPAW_CALC_SETTINGS.get('txt')
+    #print('LOGFILE', logfile)
+    #if logfile is not None:
+    #    logfile = os.path.abspath(logfile)
+    #    cmd = cmd + ' | tee {}'.format(logfile)
 
     if update_only:
         settings = {'calc': {}, 'control': {'save_calc': False}}
@@ -55,6 +64,9 @@ def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=
         settings['control']['save_calc'] = os.path.abspath('./gpaw_output_tmp.gpw')
     else:
         settings['control']['save_calc'] = None
+    
+    settings['calc']['txt'] = '-' # TODO should have nicer output settings at some point
+    
     with open(settings_path, 'w') as f:
         yaml.dump(settings, f)
     cmd = cmd.format(
@@ -84,23 +96,35 @@ class GPAWSinglePointSCF(FiretaskBase):
             update_only=False,
         )
 
+        logfile = settings['calc'].get('txt') or 'calc.txt'
+        if logfile == '-':
+            logfile = 'calc.txt'
+        logfile = os.path.abspath(logfile)
+        f = open(logfile, 'w')
+        print('LOGFILE', logfile)
         start_time = time.monotonic()
-        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
         proc.wait()
-        if proc.returncode != 0:
-            print(proc.stderr.read().decode())
-            raise RuntimeError('GPAW Calculation Failed')
         stop_time = time.monotonic()
+        f.close()
+        if proc.returncode != 0:
+            successful = False
+            update_spec = {}
+        else:
+            with open('gpaw_outdata.tmp', 'r') as f:
+                results = yaml.load(f, Loader=yaml.Loader)
+            if (not results['converged']) and self['require_converged']:
+                successful = False#raise RuntimeError('GPAW calculation did not converge!')
+            else:
+                successful = True
+            update_spec = {
+                'e_tot': results['e_tot'],
+                'converged': results['converged'],
+            }
 
-        with open('gpaw_outdata.tmp', 'r') as f:
-            results = yaml.load(f, Loader=yaml.Loader)
-        if (not results['converged']) and require_converged:
-            raise RuntimeError('GPAW calculation did not converge!')
-
-        update_spec = {
-            'e_tot': results['e_tot'],
-            'converged': results['converged'],
-            'logfile' : results['logfile'],
+        update_spec.update({
+            'successful': successful,
+            'logfile': logfile,
             'method_name': self['method_name'],
             'method_description': self.get('method_description'),
             'save_file' : save_file,
@@ -108,7 +132,7 @@ class GPAWSinglePointSCF(FiretaskBase):
             'struct': self['struct'],
             'system_id' : self['system_id'],
             'wall_time' : stop_time - start_time,
-        }
+        })
         return FWAction(update_spec=update_spec)
 
 
@@ -140,13 +164,16 @@ class GPAWSinglePointRestart(FiretaskBase):
         with open('gpaw_outdata.tmp', 'r') as f:
             results = yaml.load(f, Loader=yaml.Loader)
         if (not results['converged']) and require_converged:
-            raise RuntimeError('GPAW calculation did not converge!')
+            successful = False#raise RuntimeError('GPAW calculation did not converge!')
+        else:
+            successful = True
 
         update_spec = {
             'e_tot': results['e_tot'],
             'converged': results['converged'],
+            'successful': successful,
             'logfile' : results['logfile'],
-            'method_name': self['new_method_name'],
+            'method_namei': self['new_method_name'],
             'method_description': self.get('new_method_description'),
             'save_file' : save_file,
             'settings' : settings,
@@ -176,6 +203,10 @@ class SaveGPAWResults(FiretaskBase):
         else:
             exist_ok = True
         os.makedirs(save_dir, exist_ok=exist_ok)
+
+        if not fw_spec['successful']:
+            shutil.copyfile(fw_spec['logfile'], os.path.join(save_dir, 'log.txt'))
+            raise RuntimeError('GPAW job failed, see {}/log.txt'.format(save_dir))
 
         out_data = {
             'struct': fw_spec['struct'],

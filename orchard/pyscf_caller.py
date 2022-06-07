@@ -58,7 +58,7 @@ def setup_calc(atoms, settings):
     mol.build()
 
     if settings.get('cider') is None:
-        calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mols)
+        calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
     else:
         from mldftdat.dft.ri_cider import setup_cider_calc
         import joblib
@@ -72,10 +72,19 @@ def setup_calc(atoms, settings):
             debug=settings['cider']['debug'],
         )
     calc.__dict__.update(settings['calc'])
-    if settings['control']['density_fit']:
-        calc = calc.density_fit()
+    
+    if settings['control'].get('sgx_params') is not None:
+        sgx_params = settings['control'].get('sgx_params')
+        from pyscf import sgx
+        auxbasis = settings['control'].get('df_basis') or 'def2-universal-jfit'
+        pjs = sgx_params.pop('pjs')
+        calc = sgx.sgx_fit(calc, auxbasis=auxbasis, pjs=pjs)
+        calc.with_df.__dict__.update(**sgx_params)
+    elif settings['control']['density_fit']:
+        calc = calc.density_fit(only_dfj=settings['control']['only_dfj'])
         if settings['control'].get('df_basis') is not None:
             calc.with_df.auxbasis = settings['control']['df_basis']
+    
     if settings['control']['remove_linear_dep']:
         calc = calc.apply(scf.addons.remove_linear_dep_)
 
@@ -83,6 +92,13 @@ def setup_calc(atoms, settings):
     if settings['control'].get('dftd3'):
         from pyscf import dftd3
         calc = dftd3.dftd3(calc)
+        d3v = settings['control'].get('dftd3_version')
+        if d3v is not None:
+            print('DFTD3: Setting version to', d3v)
+            calc.with_dftd3.version = d3v
+    elif settings['control'].get('dftd4'):
+        import dftd4.pyscf as pyd4
+        calc = pyd4.energy(calc)
 
     return calc
 

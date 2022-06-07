@@ -25,6 +25,7 @@ DEFAULT_PYSCF_SETTINGS = {
     },
     'mol' : {
         'basis': 'def2-qzvppd',
+        'ecp': 'def2-qzvppd',
         'spin': 0,
         'charge': 0,
         'verbose': 3,

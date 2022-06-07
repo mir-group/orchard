@@ -6,11 +6,13 @@ config_file = os.path.expanduser('~/.orchard_config.yaml')
 if os.path.exists(config_file):
     with open(config_file, "r") as f:
         settings = yaml.load(f, Loader=yaml.Loader)
-    MLDFTDB_ROOT = settings['MLDFTDB_ROOT']
-    ACCDB_ROOT = settings['ACCDB_ROOT']
+    MLDFTDB_ROOT = settings.get('MLDFTDB_ROOT')
+    ACCDB_ROOT = settings.get('ACCDB_ROOT')
+    VCML_ROOT = settings.get('VCML_ROOT')
 else:
     MLDFTDB_ROOT = None
     ACCDB_ROOT = None
+    VCML_ROOT = None
 
 def get_functional_db_name(functional):
     functional = functional.replace(',', '_')
@@ -40,7 +42,7 @@ def read_accdb_structure(struct_id):
             if symbol.isdigit():
                 symbol = int(symbol)
             else:
-                symbol = symbol[0] + symbol[1:].lower()
+                symbol = symbol[0].upper() + symbol[1:].lower()
             symbols.append(symbol)
             coords.append([x,y,z])
         struct = Atoms(symbols, positions = coords)

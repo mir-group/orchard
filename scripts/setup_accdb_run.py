@@ -11,7 +11,10 @@ EXTRA_SETTINGS = {
         'mol_format': 'ase',
         'spinpol': True,
         'density_fit': True,
-        'dftd3': False,
+        'only_dfj': True,
+        'dftd3': True,
+        'dftd3_version': 4,
+        'dftd4': False,
         'df_basis': 'def2-universal-jkfit',
         'remove_linear_dep': True,
     },
@@ -32,6 +35,14 @@ CIDER_SETTINGS = { # (overrides 'xc' in calc)
     'ckernel': 'GGA_C_PBE',
     'debug': False,
 }
+SGX_SETTINGS = {
+    'pjs' : True,
+    'direct_scf_tol' : 1e-13,
+    'dfj' : True,
+    'grids_level_i' : 0,
+    'grids_level_f' : 1,
+}
+EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
 
 # set CIDER
 if functional == 'CIDER':
@@ -41,12 +52,24 @@ if functional == 'CIDER':
 method_name = functional
 if EXTRA_SETTINGS['control']['dftd3']:
     method_name += '-D3'
+if EXTRA_SETTINGS['control']['dftd4']:
+    assert EXTRA_SETTINGS['control']['dftd3'] == False, 'No D3 and D4 as the same time'
+    method_name += '-D4'
 
 dbroot = os.path.join(ACCDB_ROOT, 'Databases/GMTKN/GMTKN55/')
 dblist = os.path.join(dbroot, 'GMTKN_{}.list'.format(subdb))
 with open(dblist, 'r') as f:
     names = [name.strip() for name in f.readlines()]
 struct_dat = [read_accdb_structure(name) for name in names]
+
+for struct, mol_id, spin, charge in struct_dat:
+    if spin != 0:
+        spinpol = True
+        break
+else:
+    spinpol = False
+
+EXTRA_SETTINGS['control']['spinpol'] = spinpol
 
 fw_lst = []
 for struct, mol_id, spin, charge in struct_dat:
@@ -69,5 +92,5 @@ for struct, mol_id, spin, charge in struct_dat:
 
 from fireworks import LaunchPad
 launchpad = LaunchPad.auto_load()
-for fw in fw_lst[:1]:
+for fw in fw_lst:
     launchpad.add_wf(fw)
