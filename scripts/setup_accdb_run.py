@@ -12,7 +12,7 @@ EXTRA_SETTINGS = {
         'spinpol': True,
         'density_fit': True,
         'only_dfj': True,
-        'dftd3': True,
+        'dftd3': False,
         'dftd3_version': 4,
         'dftd4': False,
         'df_basis': 'def2-universal-jkfit',
