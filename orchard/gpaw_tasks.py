@@ -29,7 +29,7 @@ DEFAULT_GPAW_CONTROL_SETTINGS = {
 }
 
 
-def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=False):
+def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None, update_only=False):
     if nproc is None:
         if os.environ.get('NPROC_GPAW') is None:
             nproc = 1
@@ -38,9 +38,9 @@ def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=
     if cmd is not None:
         pass
     elif nproc == 1:
-        cmd = 'python {call_script} {settings_path} {struct_path}'
+        cmd = 'python {call_script} {settings_path}'
     else:
-        cmd = 'mpirun -np {nproc} python {call_script} {settings_path} {struct_path}'
+        cmd = 'mpirun -np {nproc} python {call_script} {settings_path}'
 
     #logfile = settings_inp['calc'].get('txt') or DEFAULT_GPAW_CALC_SETTINGS.get('txt')
     #print('LOGFILE', logfile)
@@ -66,16 +66,53 @@ def setup_gpaw_cmd(struct_path, settings_inp, nproc=None, cmd=None, update_only=
         settings['control']['save_calc'] = None
     
     settings['calc']['txt'] = '-' # TODO should have nicer output settings at some point
-    
+    if update_only:
+        assert isinstance(struct, str)
+        settings['restart_file'] = struct
+    elif isinstance(struct, dict):
+        pass
+    elif isinstance(struct, Atoms):
+        struct = struct.todict()
+    else:
+        raise ValueError('struct must be dict or Atoms')
+    settings['struct'] = struct
+
     with open(settings_path, 'w') as f:
         yaml.dump(settings, f)
     cmd = cmd.format(
         nproc=nproc,
         call_script=GPAW_CALL_SCRIPT,
         settings_path=settings_path,
-        struct_path=struct_path,
     )
     return cmd, settings['control']['save_calc'], settings
+
+def call_gpaw(cmd, logfile):
+    if logfile == '-':
+        logfile = 'calc.txt'
+    logfile = os.path.abspath(logfile)
+    f = open(logfile, 'w')
+    print('LOGFILE', logfile)
+    start_time = time.monotonic()
+    proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
+    proc.wait()
+    stop_time = time.monotonic()
+    f.close()
+    if proc.returncode != 0:
+        successful = False
+        update_spec = {}
+    else:
+        with open('gpaw_outdata.tmp', 'r') as f:
+            results = yaml.load(f, Loader=yaml.Loader)
+        if (not results['converged']) and self['require_converged']:
+            successful = False#raise RuntimeError('GPAW calculation did not converge!')
+        else:
+            successful = True
+        update_spec = {
+            'e_tot': results['e_tot'],
+            'converged': results['converged'],
+        }
+    return successful, update_spec, stop_time - start_time, logfile
+
 
 @explicit_serialize
 class GPAWSinglePointSCF(FiretaskBase):
@@ -86,10 +123,8 @@ class GPAWSinglePointSCF(FiretaskBase):
     def run_task(self, fw_spec):
         if self.get('require_converged') is None:
             self['require_converged'] = True
-        struct_path = os.path.abspath('./gpaw_fw_tmp.cif')
-        ase.io.write(struct_path, Atoms.fromdict(self['struct']))
         cmd, save_file, settings = setup_gpaw_cmd(
-            struct_path,
+            self['struct'],
             self['settings'],
             nproc=self.get('nproc'),
             cmd=self.get('cmd'),
@@ -97,30 +132,7 @@ class GPAWSinglePointSCF(FiretaskBase):
         )
 
         logfile = settings['calc'].get('txt') or 'calc.txt'
-        if logfile == '-':
-            logfile = 'calc.txt'
-        logfile = os.path.abspath(logfile)
-        f = open(logfile, 'w')
-        print('LOGFILE', logfile)
-        start_time = time.monotonic()
-        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
-        proc.wait()
-        stop_time = time.monotonic()
-        f.close()
-        if proc.returncode != 0:
-            successful = False
-            update_spec = {}
-        else:
-            with open('gpaw_outdata.tmp', 'r') as f:
-                results = yaml.load(f, Loader=yaml.Loader)
-            if (not results['converged']) and self['require_converged']:
-                successful = False#raise RuntimeError('GPAW calculation did not converge!')
-            else:
-                successful = True
-            update_spec = {
-                'e_tot': results['e_tot'],
-                'converged': results['converged'],
-            }
+        successful, update_spec, wall_time, logfile = call_gpaw(cmd, logfile)
 
         update_spec.update({
             'successful': successful,
@@ -131,7 +143,7 @@ class GPAWSinglePointSCF(FiretaskBase):
             'settings' : settings,
             'struct': self['struct'],
             'system_id' : self['system_id'],
-            'wall_time' : stop_time - start_time,
+            'wall_time' : wall_time,
         })
         return FWAction(update_spec=update_spec)
 
@@ -152,35 +164,24 @@ class GPAWSinglePointRestart(FiretaskBase):
             cmd=self.get('cmd'),
             update_only=True,
         )
+        run_fname = os.path.join(os.path.dirname(self['restart_file']), 'run_info.yaml')
+        with open(run_fname, 'r') as f:
+            struct = yaml.load(f, Loader=yaml.Loader)['struct']
 
-        start_time = time.monotonic()
-        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        proc.wait()
-        if proc.returncode != 0:
-            print(proc.stderr.read().decode())
-            raise RuntimeError('GPAW Calculation Failed')
-        stop_time = time.monotonic()
+        logfile = settings['calc'].get('txt') or 'calc.txt'
+        successful, update_spec, wall_time, logfile = call_gpaw(cmd, logfile)
 
-        with open('gpaw_outdata.tmp', 'r') as f:
-            results = yaml.load(f, Loader=yaml.Loader)
-        if (not results['converged']) and require_converged:
-            successful = False#raise RuntimeError('GPAW calculation did not converge!')
-        else:
-            successful = True
-
-        update_spec = {
-            'e_tot': results['e_tot'],
-            'converged': results['converged'],
+        update_spec.update({
             'successful': successful,
-            'logfile' : results['logfile'],
-            'method_namei': self['new_method_name'],
+            'logfile': logfile,
+            'method_name': self['new_method_name'],
             'method_description': self.get('new_method_description'),
             'save_file' : save_file,
             'settings' : settings,
-            'struct': None,
+            'struct': struct,
             'system_id' : self['system_id'],
-            'wall_time' : stop_time - start_time,
-        }
+            'wall_time' : wall_time,
+        })
         return FWAction(update_spec=update_spec)
 
 

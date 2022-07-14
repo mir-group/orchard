@@ -62,7 +62,7 @@ class SCFCalc(FiretaskBase):
         if self.get('require_converged') is None:
             self['require_converged'] = True
         if (not calc.converged) and self['require_converged']:
-            assert RuntimeError("SCF calculation did not converge!")
+            raise RuntimeError("SCF calculation did not converge!")
         update_spec = {
             'calc' : calc,
             'e_tot': calc.e_tot,

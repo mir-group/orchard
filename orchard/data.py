@@ -112,6 +112,9 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names, comp_functional=No
     result = {}
     for data_name in data_names:
         pred_energy, energy = get_accdb_data(formulas[data_name], FUNCTIONAL, BASIS)
+        if comp_functional is not None:
+            energy, _ = get_accdb_data(formulas[data_name], comp_functional, BASIS)
+            energy *= KCAL_PER_HA
         pred_energy *= KCAL_PER_HA
         result[data_name] = {
             'pred' : pred_energy,
