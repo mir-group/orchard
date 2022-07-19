@@ -185,6 +185,29 @@ class SaveSCFResults(FiretaskBase):
         return FWAction(stored_data={'save_dir': save_dir})
 
 
+@explicit_serialize
+class RunAnalysis(FiretaskBase):
+
+    required_params = ['save_root_dir', 'system_id']
+    optional_params = ['grids_level']
+
+    def run_task(self, fw_spec):
+        from mldftdat.analyzers import ElectronAnalyzer
+        calc = fw_spec['calc']
+        analyzer = ElectronAnalyzer.from_calc(calc, self.get('grids_level'))
+        analyzer.perform_full_analysis()
+        save_dir = get_save_dir(
+            self['save_root_dir'], 'KS',
+            calc.mol.basis, self['system_id'],
+            fw_spec['method_name']
+        )
+        save_file = os.path.join(save_dir,
+            'analysis_L{}.hdf5'.format(calc.grids_level))
+        analyzer.dump(save_file)
+
+        return FWAction(stored_data={'save_dir': save_dir})
+
+
 def make_etot_firework(
             struct, settings, method_name, system_id,
             save_root_dir, no_overwrite=False,
@@ -213,4 +236,26 @@ def make_etot_firework_restart(new_settings, new_method_name, system_id,
                             new_method_description=new_method_description)
     t3 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
     return Firework([t1, t2, t3], name=name)
+
+def make_analysis_firework(method_name, system_id, basis, save_root_dir,
+                           grids_level=None, name=None):
+    t1 = LoadSCFCalc(
+        save_root_dir=save_root_dir, method_name=method_name,
+        basis=basis, system_id=system_id,
+    )
+    tasks = [t1]
+    if grids_level is None or isinstance(grids_level, int):
+        tasks.append(RunAnalysis(
+            save_root_dir=save_root_dir,
+            system_id=system_id,
+            grids_level=grids_level,
+        ))
+    elif isinstance(grids_level, tuple):
+        for lvl in grids_level:
+            tasks.append(RunAnalysis(
+                save_root_dir=save_root_dir,
+                system_id=system_id,
+                grids_level=lvl,
+            ))
+    return Firework(tasks, name=name)
 
