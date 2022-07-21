@@ -202,7 +202,7 @@ class RunAnalysis(FiretaskBase):
             fw_spec['method_name']
         )
         save_file = os.path.join(save_dir,
-            'analysis_L{}.hdf5'.format(calc.grids_level))
+            'analysis_L{}.hdf5'.format(analyzer.grids_level))
         analyzer.dump(save_file)
 
         return FWAction(stored_data={'save_dir': save_dir})
@@ -250,12 +250,14 @@ def make_analysis_firework(method_name, system_id, basis, save_root_dir,
             system_id=system_id,
             grids_level=grids_level,
         ))
-    elif isinstance(grids_level, tuple):
+    elif isinstance(grids_level, (tuple, list)):
         for lvl in grids_level:
             tasks.append(RunAnalysis(
                 save_root_dir=save_root_dir,
                 system_id=system_id,
                 grids_level=lvl,
             ))
+    else:
+        raise ValueError('Unsupported grids_level')
     return Firework(tasks, name=name)
 

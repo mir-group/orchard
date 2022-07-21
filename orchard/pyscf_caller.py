@@ -1,4 +1,5 @@
 from pyscf import gto, dft, scf
+from copy import deepcopy
 
 CALC_TYPES = {
     'RKS' : dft.rks.RKS,
@@ -43,6 +44,7 @@ All PySCF settings supported:
 '''
 
 def setup_calc(atoms, settings):
+    settings = deepcopy(settings)
     mol = gto.Mole()
     fmt = settings['control']['mol_format']
     if fmt == 'xyz_file':

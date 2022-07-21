@@ -2,6 +2,7 @@ from orchard.pyscf_tasks import make_etot_firework, make_etot_firework_restart
 from orchard.workflow_utils import MLDFTDB_ROOT, ACCDB_ROOT, read_accdb_structure
 import os, sys
 import copy
+import numpy as np
 
 functional = sys.argv[1]
 subdb = sys.argv[2]
@@ -42,12 +43,19 @@ SGX_SETTINGS = {
     'grids_level_i' : 0,
     'grids_level_f' : 1,
 }
-EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
+#EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
 
 # set CIDER
 if functional == 'CIDER':
     EXTRA_SETTINGS['cider'] = CIDER_SETTINGS
     EXTRA_SETTINGS['calc']['xc'] = 'PBE'
+else:
+    from pyscf.dft import libxc
+    if (np.array(libxc.hybrid_coeff(functional)) > 0).any() \
+            or (np.array(libxc.rsh_coeff(functional)) > 0).any():
+        EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
+        print('SGX')
+        exit()
 
 method_name = functional
 if EXTRA_SETTINGS['control']['dftd3']:
