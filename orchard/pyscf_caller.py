@@ -101,6 +101,11 @@ def setup_calc(atoms, settings):
     elif settings['control'].get('dftd4'):
         import dftd4.pyscf as pyd4
         calc = pyd4.energy(calc)
+        d4func = settings['control'].get('dftd4_functional')
+        if d4func is not None:
+            calc.with_dftd4 = pyd4.DFTD4Dispersion(
+                calc.mol, xc=d4func.upper().replace(" ", "")
+            )
 
     if settings['control'].get('soscf'):
         calc = calc.newton()

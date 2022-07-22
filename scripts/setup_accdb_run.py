@@ -15,7 +15,8 @@ EXTRA_SETTINGS = {
         'only_dfj': True,
         'dftd3': False,
         'dftd3_version': 4,
-        'dftd4': False,
+        'dftd4': True,
+        'dftd4_functional': None,
         'df_basis': 'def2-universal-jkfit',
         'remove_linear_dep': True,
     },
@@ -30,17 +31,18 @@ EXTRA_SETTINGS = {
     },
 }
 CIDER_SETTINGS = { # (overrides 'xc' in calc)
-    'mlfunc_filename': '/home/kyle/Research/CiderPressDev/SPLINE_MTIGHT_WIDE.joblib',
+    #'mlfunc_filename': '/home/kyle/Research/CiderPressDev/SPLINE_MTIGHT_WIDE.joblib',
+    'mlfunc_filename': '/n/home01/kbystrom/repos/CiderPressDev/SPLINE_MTIGHT_WIDE.joblib',
     'xmix': 0.25,
     'xkernel': 'GGA_X_PBE',
     'ckernel': 'GGA_C_PBE',
     'debug': False,
 }
 SGX_SETTINGS = {
-    'pjs' : True,
+    'pjs' : False,
     'direct_scf_tol' : 1e-13,
     'dfj' : True,
-    'grids_level_i' : 0,
+    'grids_level_i' : 1,
     'grids_level_f' : 1,
 }
 #EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
@@ -49,13 +51,13 @@ SGX_SETTINGS = {
 if functional == 'CIDER':
     EXTRA_SETTINGS['cider'] = CIDER_SETTINGS
     EXTRA_SETTINGS['calc']['xc'] = 'PBE'
+    EXTRA_SETTINGS['control']['dftd4_functional'] = 'PBE0'
 else:
     from pyscf.dft import libxc
     if (np.array(libxc.hybrid_coeff(functional)) > 0).any() \
             or (np.array(libxc.rsh_coeff(functional)) > 0).any():
         EXTRA_SETTINGS['control']['sgx_params'] = SGX_SETTINGS
         print('SGX')
-        exit()
 
 method_name = functional
 if EXTRA_SETTINGS['control']['dftd3']:
@@ -85,6 +87,8 @@ for struct, mol_id, spin, charge in struct_dat:
     settings = copy.deepcopy(EXTRA_SETTINGS)
     settings['mol']['spin'] = spin
     settings['mol']['charge'] = charge
+    if 'BH76_O' not in mol_id:
+        continue
     fw_lst.append(make_etot_firework(
         struct, settings, method_name, mol_id,
         MLDFTDB_ROOT, name='{}_{}'.format(method_name, mol_id)

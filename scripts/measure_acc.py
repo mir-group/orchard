@@ -31,7 +31,7 @@ def get_subdb_mae(subdb):
     output = get_accdb_errors(dataset, functional, 'def2-qzvppd', data_names,
                               comp_functional=comp_functional)
     #kcal_per_ha = 627.509608
-    print(subdb, output[1])
+    print(subdb, output[0], output[1])
     #print(subdb, output[1] * kcal_per_ha)
 
 if __name__ == '__main__':
