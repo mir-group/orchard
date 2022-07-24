@@ -24,7 +24,9 @@ for fname in fnames:
 subdb_names = ['BH76', 'BH76RC']
 
 def get_subdb_mae(subdb):
-    with open('data_files/GMTKN55/EVAL_{}.yaml'.format(subdb), 'r') as f:
+    eval_file = 'GMTKN55/EVAL_{}.yaml'.format(subdb)
+    eval_file = os.path.join(ACCDB_ROOT, 'Databases/GMTKN', eval_file)
+    with open(eval_file, 'r') as f:
         dataset = yaml.load(f, Loader=yaml.Loader)
     data_names = list(dataset.keys())
 

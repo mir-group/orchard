@@ -2,12 +2,11 @@ from argparse import ArgumentParser
 import os
 import numpy as np
 from joblib import dump, load
-from orchard.workflow_utils import SAVE_ROOT
+from orchard.workflow_utils import SAVE_ROOT, load_rxns
 from mldftdat.models.gp import *
 from mldftdat.models.compute_mol_cov import compute_tr_covs, compute_tr_covs_ex, \
                                             compute_heg_covs, compute_new_alpha, \
                                             reduce_model_size_
-from mldftdat.data import load_descriptors, filter_descriptors
 import yaml
 
 def parse_settings(args):
@@ -34,6 +33,10 @@ def main():
     parser.add_argument('reactions_list', nargs='+', help='dataset names for reactions files')
     parser.add_argument('basis', metavar='basis', type=str,
                         help='basis set code')
+    parser.add_argument('--extra-datasets', nargs='+', default=None,
+                        help='extra datasets needed for training reactions')
+    parser.add_argument('--extra-dirs', nargs='+', default=None,
+                        help='Extra dirs to search for datasets if not found in SAVE_ROOT')
     parser.add_argument('--functional', metavar='functional', type=str, default=None,
                         help='exchange-correlation functional, HF for Hartree-Fock')
     #parser.add_argument('-c', '--density-cutoff', type=float, default=1e-4)
@@ -70,6 +73,9 @@ def main():
     print(args.load_file, args.save_file, args.datasets_list)
     model = load(args.load_file)
     args.datasets_list = model.args.datasets_list[::2]
+    if args.extra_datasets is not None:
+        for d in args.extra_datasets:
+            args.datasets_list.append(d)
     train_to_ae = args.train_to_ae
 
     if args.control_tol > 0:
@@ -86,15 +92,31 @@ def main():
         get_covs = compute_tr_covs
 
     vwrtt_list, exx_list = [], []
-    
+
+    rxn_list = []
+    for rxn_id in args.reactions_list:
+        rxn_dict = load_rxns(rxn_id)
+        for v in list(rxn_dict.values()):
+            rxn_list.append(v)
+
     import yaml
     system_ids = []
     for i in range(nd):
         fname = args.datasets_list[i]
         if args.suffix is not None:
             fname = fname + '_' + args.suffix
-        fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
-                             args.basis, args.version, fname)
+        if args.extra_dirs is None:
+            fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
+                                 args.basis, args.version, fname)
+        else:
+            ddirs = [SAVE_ROOT] + extra_dirs
+            for dd in ddirs:
+                fname = os.path.join(dd, 'DATASETS', args.functional,
+                                   args.basis, args.version, fname)
+                if os.path.exists(cdd):
+                    break
+            else:
+                raise FileNotFoundError('Could not find dataset in provided dirs')
         vwrtt_mat, exx = get_covs(model, fname)
         vwrtt_list.append(vwrtt_mat)
         exx_list.append(exx)
@@ -139,6 +161,7 @@ def main():
     exx_rxns = np.array(exx_rxns, dtype=np.float64)
     noise_list = np.array(noise_list, dtype=np.float64)
 
+    """
     if args.solids_dir:
         import ase.io.vasp
         from ase.data import ground_state_magnetic_moments, chemical_symbols
@@ -180,9 +203,11 @@ def main():
                 sol_data[sol_d][1] -= count * sol_data[atom_id][1]
             sol_vw.append(sol_data[sol_d][0][:,0] / tot)
             sol_exx.append(sol_data[sol_d][1][0] / tot)
+    """
 
     vwrtt_mat = vwrtt_rxns
     exx = exx_rxns
+    """
     if args.solids_dir:
         sol_exx = np.array(sol_exx)
         sol_vw = np.array(sol_vw).T
@@ -193,6 +218,7 @@ def main():
         exx = np.append(exx, sol_exx)
         vwrtt_mat = np.append(vwrtt_mat, sol_vw, axis=-1)
         noise_list = np.append(noise_list, 0.01 * np.ones(exx.size - noise_list.size))
+    """
 
     frac = 1.0
     version = 7
