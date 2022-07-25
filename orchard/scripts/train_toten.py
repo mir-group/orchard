@@ -67,16 +67,16 @@ def main():
     parser.add_argument('--mol-heg', action='store_true', help='Include HEG constraint in molecules dataset')
     args = parser.parse_args()
 
-    parse_settings(args)
+    #parse_settings(args)
 
     np.random.seed(args.seed)
-    print(args.load_file, args.save_file, args.datasets_list)
     model = load(args.load_file)
     args.datasets_list = model.args.datasets_list[::2]
     if args.extra_datasets is not None:
         for d in args.extra_datasets:
             args.datasets_list.append(d)
     train_to_ae = args.train_to_ae
+    print(args.load_file, args.save_file, args.datasets_list)
 
     if args.control_tol > 0:
         if not args.fit_ae_only:
@@ -109,11 +109,13 @@ def main():
             fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
                                  args.basis, args.version, fname)
         else:
-            ddirs = [SAVE_ROOT] + extra_dirs
+            ddirs = [SAVE_ROOT] + args.extra_dirs
             for dd in ddirs:
-                fname = os.path.join(dd, 'DATASETS', args.functional,
+                cdd = os.path.join(dd, 'DATASETS', args.functional,
                                    args.basis, args.version, fname)
+                print(cdd)
                 if os.path.exists(cdd):
+                    fname = cdd
                     break
             else:
                 raise FileNotFoundError('Could not find dataset in provided dirs')
@@ -136,9 +138,12 @@ def main():
     for ind, sysid in enumerate(system_ids):
         idmap[sysid] = ind
 
+    print('IDMAP')
+    for k, v in idmap.items():
+        print('k v', k, v)
     vwrtt_rxns = []
     exx_rxns = []
-    noises
+    noises = []
     for rxn in rxn_list:
         vw = 0
         ex = 0
@@ -149,17 +154,17 @@ def main():
             except KeyError:
                 raise RuntimeError('Datasets must contain all system ids in reaction sets')
             na += abs(count)
-            wv += count * vwrtt_mat[:,ind]
+            vw += count * vwrtt_mat[:,ind]
             ex += count * exx[ind]
         vwrtt_rxns.append(vw)
         exx_rxns.append(ex)
         if rxn.get('noise') is not None:
-            noise.append(rxn['noise'])
+            noises.append(rxn['noise'])
         else:
-            noises.append(args.mol_sigma + na * args.per_atom_sigma)
+            noises.append(args.mol_sigma)
     vwrtt_rxns = np.array(vwrtt_rxns, dtype=np.float64).T
     exx_rxns = np.array(exx_rxns, dtype=np.float64)
-    noise_list = np.array(noise_list, dtype=np.float64)
+    noise_list = np.array(noises, dtype=np.float64)
 
     """
     if args.solids_dir:
@@ -239,6 +244,7 @@ def main():
 
     dump(model, args.save_file)
 
+    """
     for i in range(nd):
         fname = args.datasets_list[i]
         if args.suffix is not None:
@@ -246,7 +252,7 @@ def main():
         fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
                              args.basis, args.version, fname)
         get_covs(model, fname)
-
+    """
 
 if __name__ == '__main__':
     main()

@@ -9,7 +9,7 @@ if os.path.exists(config_file):
     MLDFTDB_ROOT = settings.get('MLDFTDB_ROOT')
     ACCDB_ROOT = settings.get('ACCDB_ROOT')
     VCML_ROOT = settings.get('VCML_ROOT')
-    RXN_ROOT = settings.get('VCML_ROOT')
+    RXN_ROOT = settings.get('RXN_ROOT')
 else:
     MLDFTDB_ROOT = None
     ACCDB_ROOT = None
