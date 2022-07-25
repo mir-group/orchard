@@ -7,7 +7,7 @@ from sklearn.gaussian_process.kernels import RBF
 from itertools import combinations
 from argparse import ArgumentParser
 from joblib import load, dump
-from mldftdat.scripts.train_gp import parse_dataset
+from orchard.scripts.train_gp import parse_dataset
 from mldftdat.models.kernels import *
 import pyscf.lib
 
