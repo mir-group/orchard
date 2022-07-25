@@ -87,8 +87,6 @@ for struct, mol_id, spin, charge in struct_dat:
     settings = copy.deepcopy(EXTRA_SETTINGS)
     settings['mol']['spin'] = spin
     settings['mol']['charge'] = charge
-    if 'BH76_O' not in mol_id:
-        continue
     fw_lst.append(make_etot_firework(
         struct, settings, method_name, mol_id,
         MLDFTDB_ROOT, name='{}_{}'.format(method_name, mol_id)
