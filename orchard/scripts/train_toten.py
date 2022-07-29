@@ -79,8 +79,8 @@ def main():
     print(args.load_file, args.save_file, args.datasets_list)
 
     if args.control_tol > 0:
-        if not args.fit_ae_only:
-            raise NotImplementedError('No XED training + control_tol yet')
+        #if not args.fit_ae_only:
+        #    raise NotImplementedError('No XED training + control_tol yet')
         model = reduce_model_size_(model, args.control_tol)
 
     assert len(args.datasets_list) != 0, 'Need training data'
@@ -131,7 +131,7 @@ def main():
         vwrtt_list.append(vw_tmp)
         exx_list.append(exx_tmp)
         system_ids.append('UNIFORM_ELECTRON_GAS')
-        rxn_list.append({'structs': 'UNIFORM_ELECTRON_GAS', 'counts': 1, 'noise': 0.00})
+        rxn_list.append({'structs': ['UNIFORM_ELECTRON_GAS'], 'counts': [1], 'noise': 0.00})
     vwrtt_mat = np.hstack(vwrtt_list)
     exx = np.concatenate(exx_list)
     idmap = {}
