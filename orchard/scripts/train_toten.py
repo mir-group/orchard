@@ -159,7 +159,10 @@ def main():
         vwrtt_rxns.append(vw)
         exx_rxns.append(ex)
         if rxn.get('noise') is not None:
+            print('Fixed noise', rxn.get('noise'))
             noises.append(rxn['noise'])
+        elif rxn.get('noise_factor') is not None:
+            noises.append(rxn['noise_factor'] * args.mol_sigma)
         else:
             noises.append(args.mol_sigma)
     vwrtt_rxns = np.array(vwrtt_rxns, dtype=np.float64).T
