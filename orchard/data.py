@@ -1,5 +1,5 @@
 import os
-from orchard.workflow_utils import MLDFTDB_ROOT, read_accdb_structure, get_save_dir
+from orchard.workflow_utils import ACCDB_ROOT, MLDFTDB_ROOT, read_accdb_structure, get_save_dir
 import yaml
 import numpy as np
 
@@ -127,3 +127,22 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names, comp_functional=No
     rmse = np.sqrt(np.mean(errs**2))
     std = np.std(errs)
     return me, mae, rmse, std, result
+
+def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None):
+    eval_file = 'GMTKN55/EVAL_{}.yaml'.format(subdb)
+    eval_file = os.path.join(ACCDB_ROOT, 'Databases/GMTKN', eval_file)
+    with open(eval_file, 'r') as f:
+        dataset = yaml.load(f, Loader=yaml.Loader)
+    if data_names is None:
+        data_names = list(dataset.keys())
+    elif isinstance(data_names, str):
+        with open(data_names, 'r') as f:
+            data_names = list(yaml.load(f, Loader=yaml.Loader).keys())
+            data_names = [d.split('/')[-1] for d in data_names]
+
+    output = get_accdb_errors(dataset, xc, 'def2-qzvppd', data_names,
+                              comp_functional=comp_xc)
+    print(subdb, output[0], output[1])
+    #print(output[1])
+    return output[1]
+

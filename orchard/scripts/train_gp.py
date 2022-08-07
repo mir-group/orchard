@@ -47,6 +47,7 @@ def parse_dataset(args, i, val=False):
         y = y[inds]
         rho = rho[inds]
         rho_data = rho_data[:,inds]
+    print(y[::n].size)
     return X[::n,:], y[::n], rho[::n], rho_data[:,::n]
 
 def parse_list(lststr, T=int):
@@ -76,13 +77,16 @@ def main():
     parser.add_argument('--tail', action='store_true', help='atomic tail exact constraint')
     parser.add_argument('-o', '--desc-order', default=None,
                         help='comma-separated list of descriptor order with no spaces. must start with 0,1.')
-    parser.add_argument('-l', '--length-scale', default=None,
+    parser.add_argument('-l', '--length-scale', default=None, type=float, nargs='+',
                         help='comma-separated list initial length-scale guesses')
+    parser.add_argument('--scale-mul', type=float, default=1.0)
     parser.add_argument('--length-scale-mul', type=float, default=1.0,
                         help='Used for automatic length-scale initial guess')
+    parser.add_argument('--min-lscale', type=float, default=None,
+                        help='Minimum length-scale for GP kernel')
     parser.add_argument('-a', '--agpr', action='store_true',
                         help='Whether to use Additive RBF. If False, use RBF')
-    parser.add_argument('-as', '--agpr-scale', default=None)
+    parser.add_argument('-as', '--agpr-scale', default=None, type=float, nargs='+')
     parser.add_argument('-ao', '--agpr-order', default=2, type=int)
     parser.add_argument('-an', '--agpr-nsingle', default=1, type=int)
     parser.add_argument('-x', '--xed-y-code', default='CHACHIYO', type=str)

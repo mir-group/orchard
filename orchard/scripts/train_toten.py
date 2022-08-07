@@ -58,6 +58,7 @@ def main():
     parser.add_argument('--atom-mul', type=float, default=1.0)
     parser.add_argument('--mol-mul', type=float, default=1.0)
     parser.add_argument('--fit-ae-only', action='store_true')
+    parser.add_argument('--nmax-sparse', type=int, default=None, help='If set, not more than this many points used in sparse set')
     parser.add_argument('--control-tol', type=float, default=-1e-5, help='Reduce control point size for given tol, negative means ignore, only allowed when fit-ae-only is true')
     parser.add_argument('--mol-sigma', type=float, default=np.sqrt(1e-5), help='Standard deviation noise parameter for total molecular energy data')
     parser.add_argument('--per-atom-sigma', type=float, default=0.0, help='Standard deviation noise parameter added per atom for total molecular energy data, excluding the first atom')
@@ -81,7 +82,7 @@ def main():
     if args.control_tol > 0:
         #if not args.fit_ae_only:
         #    raise NotImplementedError('No XED training + control_tol yet')
-        model = reduce_model_size_(model, args.control_tol)
+        model = reduce_model_size_(model, args.control_tol, args.nmax_sparse)
 
     assert len(args.datasets_list) != 0, 'Need training data'
     nd = len(args.datasets_list)
