@@ -3,9 +3,12 @@ from orchard.workflow_utils import MLDFTDB_ROOT, ACCDB_ROOT, read_accdb_structur
 import os, sys
 import copy
 import yaml
+import numpy as np
 
 cider_dir = sys.argv[1]
 subdb = sys.argv[2]
+cider_dir = os.path.expanduser(cider_dir)
+print(cider_dir)
 
 EXTRA_SETTINGS = {
     'control' : {
@@ -15,6 +18,7 @@ EXTRA_SETTINGS = {
     },
     'calc' : {
         'xc': 'PBE',
+        'conv_tol': 1e-6
     },
 }
 

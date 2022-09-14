@@ -1,6 +1,6 @@
 from orchard.pyscf_tasks import make_etot_firework, make_etot_firework_restart
 from orchard.workflow_utils import MLDFTDB_ROOT, ACCDB_ROOT, read_accdb_structure
-import os, sys
+import os, sys, yaml
 import copy
 import numpy as np
 
@@ -31,8 +31,6 @@ EXTRA_SETTINGS = {
     },
 }
 CIDER_SETTINGS = { # (overrides 'xc' in calc)
-    #'mlfunc_filename': '/home/kyle/Research/CiderPressDev/SPLINE_MTIGHT_WIDE.joblib',
-    'mlfunc_filename': '/n/home01/kbystrom/repos/CiderPressDev/SPLINE_MTIGHT_WIDE.joblib',
     'xmix': 0.25,
     'xkernel': 'GGA_X_PBE',
     'ckernel': 'GGA_C_PBE',
@@ -49,7 +47,15 @@ SGX_SETTINGS = {
 
 # set CIDER
 if functional == 'CIDER':
+    cider_dir = os.path.expanduser(sys.argv[3])
+    cider_joblib = os.path.join(cider_dir, 'model.joblib')
+    cider_desc = os.path.join(cider_dir, 'description.yaml')
+    with open(cider_desc, 'r') as f:
+        cider_desc = yaml.load(f, Loader=yaml.Loader)
+    functional = os.path.join('PBE0_CIDER', cider_desc['name'])
+    EXTRA_SETTINGS['calc']['conv_tol'] = 1e-8
     EXTRA_SETTINGS['cider'] = CIDER_SETTINGS
+    EXTRA_SETTINGS['cider']['mlfunc_filename'] = cider_joblib
     EXTRA_SETTINGS['calc']['xc'] = 'PBE'
     EXTRA_SETTINGS['control']['dftd4_functional'] = 'PBE0'
 else:
@@ -60,6 +66,10 @@ else:
         print('SGX')
 
 method_name = functional
+if 'CHACHIYO' in functional:
+    print('SETTING UP BASELINE')
+    EXTRA_SETTINGS['control']['dftd4_functional'] = 'PBE0'
+    method_name = 'BASELINE/' + method_name
 if EXTRA_SETTINGS['control']['dftd3']:
     method_name += '-D3'
 if EXTRA_SETTINGS['control']['dftd4']:
@@ -80,6 +90,13 @@ else:
     spinpol = False
 
 EXTRA_SETTINGS['control']['spinpol'] = spinpol
+
+if EXTRA_SETTINGS.get('cider') is not None:
+    maxz = 0
+    for struct, mol_id, spin, charge in struct_dat:
+        maxz = max(maxz, np.max(struct.get_atomic_numbers()))
+    maxz = min(maxz, 36)
+    EXTRA_SETTINGS['cider']['amax'] = (maxz/6)**2 * 1000
 
 fw_lst = []
 for struct, mol_id, spin, charge in struct_dat:
