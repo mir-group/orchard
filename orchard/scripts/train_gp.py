@@ -80,7 +80,7 @@ def main():
     parser.add_argument('-l', '--length-scale', default=None, type=float, nargs='+',
                         help='comma-separated list initial length-scale guesses')
     parser.add_argument('--scale-mul', type=float, default=1.0)
-    parser.add_argument('--length-scale-mul', type=float, default=1.0,
+    parser.add_argument('--length-scale-mul', type=float, nargs='+', default=[1.0],
                         help='Used for automatic length-scale initial guess')
     parser.add_argument('--min-lscale', type=float, default=None,
                         help='Minimum length-scale for GP kernel')
@@ -110,10 +110,15 @@ def main():
 
     feature_list = FeatureList.load(args.feature_file)
 
+    if len(args.length_scale_mul) == 1:
+        args.length_scale_mul = args.length_scale_mul[0]
+    else:
+        args.length_scale_mul = np.array(args.length_scale_mul)
+
     if args.length_scale is not None:
-        args.length_scale = parse_list(args.length_scale, T=float)
+        args.length_scale = np.array(args.length_scale) #parse_list(args.length_scale, T=float)
     if args.agpr_scale is not None:
-        args.agpr_scale = parse_list(args.agpr_scale, T=float)
+        args.agpr_scale = np.array(args.agpr_scale) #parse_list(args.agpr_scale, T=float)
     if args.desc_order is not None:
         args.desc_order = parse_list(args.desc_order)
 

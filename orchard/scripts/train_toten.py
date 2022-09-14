@@ -58,6 +58,7 @@ def main():
     parser.add_argument('--atom-mul', type=float, default=1.0)
     parser.add_argument('--mol-mul', type=float, default=1.0)
     parser.add_argument('--fit-ae-only', action='store_true')
+    parser.add_argument('--fix-fxsigma-to-molsigma', action='store_true')
     parser.add_argument('--nmax-sparse', type=int, default=None, help='If set, not more than this many points used in sparse set')
     parser.add_argument('--control-tol', type=float, default=-1e-5, help='Reduce control point size for given tol, negative means ignore, only allowed when fit-ae-only is true')
     parser.add_argument('--mol-sigma', type=float, default=np.sqrt(1e-5), help='Standard deviation noise parameter for total molecular energy data')
@@ -83,6 +84,10 @@ def main():
         #if not args.fit_ae_only:
         #    raise NotImplementedError('No XED training + control_tol yet')
         model = reduce_model_size_(model, args.control_tol, args.nmax_sparse)
+    if args.fix_fxsigma_to_molsigma:
+        from sklearn.gaussian_process.kernels import WhiteKernel
+        assert isinstance(model.gp.kernel_.k2.k1, WhiteKernel)
+        model.gp.kernel_.k2.k1.set_params(noise_level=args.mol_sigma**2)
 
     assert len(args.datasets_list) != 0, 'Need training data'
     nd = len(args.datasets_list)
