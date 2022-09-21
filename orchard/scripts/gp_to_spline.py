@@ -30,6 +30,9 @@ def get_dim(x, length_scale, density = 6, buff = 0.0, bound = None, max_ngrid = 
 
 
 def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
+    """
+    Quick approach for pure RBF GP mapping for N <= 4
+    """
     if gpr.agpr:
         raise ValueError('Must not be additive GP!')
     X = gpr.X
@@ -48,6 +51,52 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
                     max_ngrid=max_ngrid))
     grid = [np.linspace(dims[i][0], dims[i][1], dims[i][2])\
             for i in range(N)]
+
+    k0s = []
+    print(length_scale)
+    for i in range(D.shape[1]):
+        print(length_scale[i], np.min(D[:,i]), np.max(D[:,i]))
+        diff = (D[:,i:i+1] - grid[i][np.newaxis,:]) / length_scale[i]
+        k0s.append(np.exp(-0.5 * diff**2))
+
+    inds = list(np.arange(N))
+    funcps = []
+    spline_grids = []
+    ind_sets = []
+    if len(inds) == 0:
+        raise ValueError('Kernel is constant!')
+    elif len(inds) == 1:
+        funcps.append(np.dot(alpha, k0s[inds[0]]))
+        spline_grids.append(UCGrid(dims[inds[0]]))
+        ind_sets.append(tuple(inds))
+    elif len(inds) == 2:
+        k = np.einsum('ni,nj->nij', k0s[inds[0]], k0s[inds[1]])
+        spline_grids.append(UCGrid(dims[inds[0]], dims[inds[1]]))
+        funcps.append(np.einsum('n,nij->ij', alpha, k))
+        ind_sets.append(tuple(inds))
+    elif len(inds) == 3:
+        fps = 0
+        for p0, p1 in pyscf.lib.prange(0, len(k0s[inds[0]]), 200):
+            k = np.einsum(
+                'ni,nj,nk->nijk',
+                k0s[inds[0]][p0:p1],
+                k0s[inds[1]][p0:p1],
+                k0s[inds[2]][p0:p1]
+            )
+            fps += np.einsum('n,nijk->ijk', alpha[p0:p1], k)
+        funcps.append(fps)
+        spline_grids.append(UCGrid(dims[inds[0]], dims[inds[1]],
+                                   dims[inds[2]]))
+        ind_sets.append(tuple(inds))
+    elif len(inds) == 4:
+        k = np.einsum('ni,nj,nk,nl->nijkl', k0s[inds[0]], k0s[inds[1]],
+                      k0s[inds[2]], k0s[inds[3]])
+        funcps.append(np.einsum('n,nijkl->ijkl', alpha, k))
+        spline_grids.append(UCGrid(dims[inds[0]], dims[inds[1]],
+                                   dims[inds[2]], dims[inds[3]]))
+        ind_sets.append(tuple(inds))
+    else:
+        raise ValueError('Order too high!')
 
     coeff_sets = [filter_cubic(spline_grids[0], funcps[0])]
     evaluator = NormGPFunctional(scale, ind_sets, spline_grids, coeff_sets,
