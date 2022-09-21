@@ -29,8 +29,43 @@ def get_dim(x, length_scale, density = 6, buff = 0.0, bound = None, max_ngrid = 
     return (mini, maxi, ngrid)
 
 
+def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
+    if gpr.agpr:
+        raise ValueError('Must not be additive GP!')
+    X = gpr.X
+    alphas = gpr.gp.alpha_
+    if gpr.args.use_ex_kernel:
+        alpha *= X[:,0]
+    D = X[:,1:]
+    y = gpr.y
+    N = D.shape[1]
+    rbf = gpr.gp.kernel_.k1
+    length_scale = rbf.k2.length_scale
+    scale = np.array(1.0) # TODO ??
+    for i in range(N):
+        dims.append(get_dim(D[:,i], length_scale[i],
+                    density=rbf_density, bound=gpr.feature_list[i].bounds,
+                    max_ngrid=max_ngrid))
+    grid = [np.linspace(dims[i][0], dims[i][1], dims[i][2])\
+            for i in range(N)]
+
+    coeff_sets = [filter_cubic(spline_grids[0], funcps[0])]
+    evaluator = NormGPFunctional(scale, ind_sets, spline_grids, coeff_sets,
+                                 gpr.xed_y_converter, gpr.feature_list,
+                                 gpr.desc_order, const=const,
+                                 desc_version=gpr.desc_version,
+                                 a0=gpr.a0, fac_mul=gpr.fac_mul,
+                                 amin=gpr.amin)
+    if gpr.args.use_ex_kernel:
+        from mldftdat.models.gp import XED_Y_CONVERTERS
+        evaluator.xed_y_converter = XED_Y_CONVERTERS['CHACHIYO']
+    
+    return evaluator
+
 def get_mapped_gp_evaluator(gpr, test_x=None, test_y=None, test_rho_data=None,
                             srbf_density=8, arbf_density=8, max_ngrid=120):
+    if not gpr.agpr:
+        raise ValueError('Must be additive GP!')
     X = gpr.X
     alpha = gpr.gp.alpha_
     if gpr.args.use_ex_kernel:
