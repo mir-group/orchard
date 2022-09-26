@@ -33,10 +33,10 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
     """
     Quick approach for pure RBF GP mapping for N <= 4
     """
-    if gpr.agpr:
+    if gpr.args.agpr:
         raise ValueError('Must not be additive GP!')
     X = gpr.X
-    alphas = gpr.gp.alpha_
+    alpha = gpr.gp.alpha_
     if gpr.args.use_ex_kernel:
         alpha *= X[:,0]
     D = X[:,1:]
@@ -44,7 +44,8 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
     N = D.shape[1]
     rbf = gpr.gp.kernel_.k1
     length_scale = rbf.k2.length_scale
-    scale = np.array(1.0) # TODO ??
+    scale = np.array([rbf.k1.constant_value]) # TODO ??
+    dims = []
     for i in range(N):
         dims.append(get_dim(D[:,i], length_scale[i],
                     density=rbf_density, bound=gpr.feature_list[i].bounds,
@@ -101,7 +102,7 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
     coeff_sets = [filter_cubic(spline_grids[0], funcps[0])]
     evaluator = NormGPFunctional(scale, ind_sets, spline_grids, coeff_sets,
                                  gpr.xed_y_converter, gpr.feature_list,
-                                 gpr.desc_order, const=const,
+                                 gpr.desc_order, const=0.0,
                                  desc_version=gpr.desc_version,
                                  a0=gpr.a0, fac_mul=gpr.fac_mul,
                                  amin=gpr.amin)
@@ -113,7 +114,7 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
 
 def get_mapped_gp_evaluator(gpr, test_x=None, test_y=None, test_rho_data=None,
                             srbf_density=8, arbf_density=8, max_ngrid=120):
-    if not gpr.agpr:
+    if not gpr.args.agpr:
         raise ValueError('Must be additive GP!')
     X = gpr.X
     alpha = gpr.gp.alpha_
@@ -312,7 +313,9 @@ def main():
         yv = np.append(yv, yn, axis=0)
         rhov = np.append(rhov, rhon, axis=0)
         rho_datav = np.append(rho_datav, rho_datan, axis=1)
-    if nv == 0:
+    if not gpr.args.agpr:
+        evaluator = get_mapped_gp_evaluator_simple(gpr)
+    elif nv == 0:
         evaluator = get_mapped_gp_evaluator(gpr, srbf_density=args.srbfd,
                                             arbf_density=args.arbfd,
                                             max_ngrid=args.maxng)
