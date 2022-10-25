@@ -1,6 +1,7 @@
 from mldftdat.data import predict_exchange, predict_correlation,\
                           predict_total_exchange_unrestricted
 from mldftdat.analyzers import ElectronAnalyzer
+from mldftdat.models.compute_mol_cov import compute_x_pred
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
 import numpy as np 
 from collections import Counter
@@ -197,6 +198,84 @@ def error_table3u(dirs, Analyzer, models, rows, basis, functional):
     return (fxlst_true, fxlst_pred, errlst, ae_errlst),\
            (columns, rows, errtbl)
 
+def get_single_file_xpred(fname_base, models, _get_fname):
+    tmp = '//SUFFIX_TEMPLATE//'
+    default = 'WIDE_WIDE'
+    fname = _get_fname(fname_base.replace(tmp, default))
+    exx = compute_x_pred(fname, 'EXX')
+    diffs = []
+    for model in models:
+        if isinstance(model, str):
+            fname = _get_fname(fname_base.replace(tmp, default))
+            xpred = compute_x_pred(fname, 'SL', model=model)
+        else:
+            fname = _get_fname(fname_base.replace(tmp, model.args.suffix))
+            xpred = compute_x_pred(fname, 'ML', model=model)
+        diffs.append(xpred - exx)
+    return exx, diffs
+
+def error_table_rxn(mol_ids, fname_base, models, formulas=None, extra_dirs=None):
+    def _get_fname(fname):
+        if args.extra_dirs is None:
+            fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
+                                 args.basis, args.desc_version, fname)
+        else:
+            ddirs = [SAVE_ROOT] + args.extra_dirs
+            for dd in ddirs:
+                cdd = os.path.join(dd, 'DATASETS', args.functional,
+                                  args.basis, args.desc_version, fname)
+                print(cdd)
+                if os.path.exists(cdd):
+                    fname = cdd
+                    break
+            else:
+                raise FileNotFoundError('Could not find dataset in provided dirs')
+        return fname
+    
+    """
+    tmp = '//SUFFIX_TEMPLATE//'
+    default = 'WIDE_WIDE'
+    fname = _get_fname(fname_base.replace(tmp, default))
+    exx = compute_x_pred(fname, 'EXX')
+    diffs = []
+    for model in models:
+        if isinstance(model, str):
+            fname = _get_fname(fname_base.replace(tmp, default))
+            xpred = compute_x_pred(fname, 'SL', model=model)
+        else:
+            fname = _get_fname(fname_base.replace(tmp, model.args.suffix))
+            xpred = compute_x_pred(fname, 'ML', model=model)
+        diffs.append(xpred - exx)
+    if formulas is None:
+        return exx, np.array(diffs)
+    """
+    exx, diffs = None, None
+    for fb in fname_base:
+        exx_tmp, diffs_tmp = get_single_file_xpred(fb, models, _get_fname)
+        if exx is None:
+            exx = exx_tmp
+            diffs = diffs_tmp
+        else:
+            exx = np.append(exx, exx_tmp)
+            diffs = np.append(diffs, diffs_tmp, axis=1)
+    if formulas is None:
+        return exx, np.array(diffs)
+
+    rxn_names = list(formulas.keys())
+    rxn_names.sort()
+    rxn_diffs = []
+    noise_factors = [formulas[n].get('noise_factor') or 1.0 for n in rxn_names]
+    for im, model in enumerate(models):
+        ndiffs = {m:x for m,x in zip(mol_ids, diffs[im])}
+        rxn_diff_list = []
+        for name in rxn_names:
+            rxn_diff = 0
+            for s, c in zip(formulas[name]['structs'], formulas[name]['counts']):
+                rxn_diff += c * ndiffs[s]
+            rxn_diff_list.append(rxn_diff)
+        rxn_diffs.append(np.array(rxn_diff_list))
+    return exx, diffs, rxn_names, np.array(rxn_diffs), np.array(noise_factors, dtype=np.float64)
+
 def error_table_corr(dirs, Analyzer, models, rows):
     from collections import Counter
     from ase.data import chemical_symbols, atomic_numbers, ground_state_magnetic_moments
@@ -314,11 +393,33 @@ if __name__ == '__main__':
                         help='exchange-correlation functional, HF for Hartree-Fock')
     parser.add_argument('--save-file', type=str, default=None,
                         help='If not None, save error table to this file.')
+    parser.add_argument('--xsuffix', type=str, default=None,
+                        help='If provided, use stored feat data for avoid recomputing descriptors')
+    parser.add_argument('--reaction-dataset', type=str, default=None,
+                        help='If supplied, compute chemical reaction diffs')
+    parser.add_argument('--desc-version', type=str, default=None)
+    parser.add_argument('--extra-dirs', type=str, nargs='+', default=None)
+    parser.add_argument('--base-sysdir', type=str, default=None,
+                        help='If provided, append to mol_files')
     args = parser.parse_args()
 
-    mol_ids = load_mol_ids(args.mol_file)
+    if args.xsuffix is not None:
+        args.xsuffix = '//SUFFIX_TEMPLATE//'
+    if args.base_sysdir is None:
+        mol_ids = load_mol_ids(args.mol_file)
+        fname = os.path.basename(args.mol_file)[:-5] + '_' + args.xsuffix
+        fname = fname.upper()
+        fnames = [fname]
+    else:
+        mol_ids = []
+        fnames = []
+        for f in args.mol_file.split(','):
+            mol_ids += load_mol_ids(os.path.join(args.base_sysdir, f))
+            fname = os.path.basename(f) + '_' + args.xsuffix
+            fname = fname.upper()
+            fnames.append(fname)
 
-    Analyzer = ElectronAnalyzer    
+    Analyzer = ElectronAnalyzer 
 
     dirs = []
     for mol_id in mol_ids:
@@ -327,7 +428,30 @@ if __name__ == '__main__':
 
     rows, models = load_models(args.model_file)
 
-    if args.version == '3':
+    if args.xsuffix is not None:
+        formulas = None
+        if args.reaction_dataset is not None:
+            from orchard.workflow_utils import load_rxns
+            formulas = load_rxns(args.reaction_dataset)
+        res = error_table_rxn(mol_ids, fnames, models, formulas=formulas)
+        df = pd.DataFrame()
+        if formulas is None:
+            exx, diffs = res
+            dat_names = mol_ids
+            errs = diffs
+        else:
+            exx, pred, rxn_names, rxn_diffs, nfs = res
+            dat_names = rxn_names
+            errs = rxn_diffs
+        for i, r in enumerate(rows):
+            df[r] = errs[i]
+        df.index = dat_names
+        df.loc['MAE'] = df.loc[dat_names].abs().mean()
+        df.loc['RMSE'] = df.loc[dat_names].pow(2).mean().pow(0.5)
+        if formulas is not None:
+            df.loc['LOSS'] = (df.loc[dat_names] / nfs[:,None]).pow(2).sum()
+        print(df.to_latex())
+    elif args.version == '3':
         res1, res2 = error_table3(dirs, Analyzer, models, rows, args.basis, args.functional)
         fxlst_true, fxlst_pred, errlst, ae_errlst = res1
         columns, rows, errtbl = res2

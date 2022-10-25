@@ -302,7 +302,7 @@ def main():
     print('OUTNAME', args.outname)
     
     gpr = load(args.fname)
-    assert len(gpr.args.validation_set) % 2 == 0,\
+    assert (gpr.args.validation_set is None) or len(gpr.args.validation_set) % 2 == 0,\
         'Need pairs of entries for datasets list.'
     nv = 0#len(gpr.args.validation_set) // 2
     if nv != 0:

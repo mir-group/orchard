@@ -155,7 +155,7 @@ def main():
     args = parser.parse_args()
 
     version = args.version.lower()
-    if version not in ['a', 'b', 'c', 'd']:
+    if version not in ['a', 'b', 'c', 'd', 'e']:
         raise ValueError('Unsupported descriptor set')
 
     mol_ids = load_mol_ids(args.mol_id_file)
@@ -184,7 +184,7 @@ def main():
         'a0': args.gg_a0,
         'fac_mul': args.gg_facmul
     }
-    if version in ['b', 'd']:
+    if version in ['b', 'd', 'e']:
         gg_kwargs['vvmul'] = args.gg_vvmul
     compile_dataset2(
         dataname, mol_ids, SAVE_ROOT, args.functional, args.basis, 

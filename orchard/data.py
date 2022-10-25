@@ -110,11 +110,13 @@ def get_accdb_performance(dataset_eval_name, FUNCTIONAL, BASIS, data_names,
     else:
         return me, mae, rmse, std, result
 
-def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names, comp_functional=None):
+def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names,
+                     comp_functional=None):
     errs = []
     refs = []
     result = {}
     for data_name in data_names:
+        #print(data_name)
         pred_energy, energy = get_accdb_data(formulas[data_name], FUNCTIONAL, BASIS)
         if comp_functional is not None:
             energy, _ = get_accdb_data(formulas[data_name], comp_functional, BASIS)
@@ -123,6 +125,7 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names, comp_functional=No
         result[data_name] = {
             'pred' : pred_energy,
             'true' : energy,
+            'weight': 1.0 / (formulas[data_name].get('noise_factor') or 1.0),
         }
         errs.append(pred_energy-energy)
         refs.append(energy)
@@ -133,7 +136,8 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names, comp_functional=No
     std = np.std(errs)
     return me, mae, rmse, std, result, len(errs), np.mean(np.abs(refs))
 
-def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None, return_count=False, ae=False):
+def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None,
+                  return_count=False, ae=False, return_result=False):
     eval_file = 'GMTKN55/EVAL_{}.yaml'.format(subdb)
     if ae:
         eval_file = eval_file.replace('GMTKN55/EVAL_', 'GMTKN55/AE2_EVAL_')
@@ -146,6 +150,7 @@ def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None, return_count=False, 
         with open(data_names, 'r') as f:
             data_names = list(yaml.load(f, Loader=yaml.Loader).keys())
             data_names = [d.split('/')[-1] for d in data_names]
+    data_names = [d for d in data_names if d != 'prefix']
 
     output = get_accdb_errors(dataset, xc, 'def2-qzvppd', data_names,
                               comp_functional=comp_xc)
@@ -153,6 +158,39 @@ def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None, return_count=False, 
     print(subdb, output[1])
     #print(output[1])
     if return_count:
-        return output[-2], output[-1], output[1]
+        if return_result:
+            return output[-2], output[-1], output[1], output[4]
+        else:
+            return output[-2], output[-1], output[1]
+    if return_result:
+        return output[1], output[4]
     return output[1]
+
+def get_weighted_loss(subdb, xc, comp_xc=None, data_names=None, return_count=False, ae=False):
+    eval_file = 'GMTKN55/EVAL_{}.yaml'.format(subdb)
+    if ae:
+        eval_file = eval_file.replace('GMTKN55/EVAL_', 'GMTKN55/AE2_EVAL_')
+    eval_file = os.path.join(ACCDB_ROOT, 'Databases/GMTKN', eval_file)
+    with open(eval_file, 'r') as f:
+        dataset = yaml.load(f, Loader=yaml.Loader)
+    if data_names is None:
+        data_names = list(dataset.keys())
+    elif isinstance(data_names, str):
+        with open(data_names, 'r') as f:
+            data_names = list(yaml.load(f, Loader=yaml.Loader).keys())
+            data_names = [d.split('/')[-1] for d in data_names]
+    data_names = [d for d in data_names if d != 'prefix']
+
+    output = get_accdb_errors(dataset, xc, 'def2-qzvppd', data_names,
+                              comp_functional=comp_xc)
+
+    res = output[4]
+    loss = 0
+    for _, r in res.items():
+        loss += ( (r['pred'] - r['true']) * r['weight'] )**2
+    loss = np.sqrt(loss / output[-2])
+    if return_count:
+        return output[-2], output[-1], loss
+    print(subdb, loss)
+    return loss
 

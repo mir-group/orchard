@@ -7,12 +7,17 @@ def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW
+        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
-        settings['xc'] = CiderGGAPASDW.from_joblib(
-            fname, **cider_settings
-        )
+        try:
+            settings['xc'] = CiderGGAPASDW.from_joblib(
+                fname, **cider_settings
+            )
+        except ValueError:
+            settings['xc'] = CiderMGGAPASDW.from_joblib(
+                fname, **cider_settings
+            )
 
     if control.get('multipole_corr') is not None:
         from gpaw.poisson import PoissonSolver
@@ -62,12 +67,19 @@ def get_nscf_routine(settings_inp):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW
+        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
-        settings['xc'] = CiderGGAPASDW.from_joblib(
-            fname, **cider_settings
-        )
+        try:
+            settings['xc'] = CiderGGAPASDW.from_joblib(
+                fname, **cider_settings
+            )
+        except ValueError:
+            cider_settings['debug'] = False # Not going to use potential anyway
+                                            # debug not implemented for MGGA
+            settings['xc'] = CiderMGGAPASDW.from_joblib(
+                fname, **cider_settings
+            )
         def routine(atoms):
             return get_nscf_energy_nonhybrid(atoms, settings['xc'])
     elif settings.get('xc') in ['EXX', 'PBE0', 'HSE03', 'HSE06', 'B3LYP']:
