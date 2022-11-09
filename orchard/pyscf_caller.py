@@ -40,6 +40,11 @@ All PySCF settings supported:
         'ckernel': str, libxc name of correlation kernel,
         'debug': bool,
     }
+    'jax': None or { # (overrides 'xc' in calc, can be used with cider)
+        'xcname': str,
+        'base_xc': str,
+        'params': dict of params for use in jax functional,
+    }
 }
 '''
 
@@ -59,9 +64,12 @@ def setup_calc(atoms, settings):
     mol.__dict__.update(settings['mol'])
     mol.build()
 
-    if settings.get('cider') is None:
+    is_cider = settings.get('cider') is not None
+    is_jax = settings.get('jax') is not None
+    if (not is_cider) and (not is_jax):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
-    else:
+    elif is_cider and (not is_jax):
+        # TODO grid level settings
         from mldftdat.dft.ri_cider import setup_cider_calc
         import joblib
         calc = setup_cider_calc(
@@ -72,6 +80,26 @@ def setup_calc(atoms, settings):
             ckernel=settings['cider']['ckernel'],
             xmix=settings['cider']['xmix'],
             debug=settings['cider']['debug'],
+        )
+    elif (not is_cider) and is_jax:
+        from mldftdat.dft.jax_ks import setup_jax_exx_calc
+        calc = setup_jax_exx_calc(
+            mol,
+            settings['jax']['xcname'],
+            settings['jax']['params'],
+            spinpol=settings['control']['spinpol'],
+            base_xc=settings['jax'].get('base_xc'),
+        )
+    else:
+        from mldftdat.dft.jax_ks import setup_jax_cider_calc
+        import joblib
+        calc = setup_jax_exx_calc(
+            mol,
+            joblib.load(settings['cider']['mlfunc_filename']),
+            settings['jax']['xcname'],
+            settings['jax']['params'],
+            spinpol=settings['control']['spinpol'],
+            base_xc=settings['jax'].get('base_xc'),
         )
     calc.__dict__.update(settings['calc'])
     
