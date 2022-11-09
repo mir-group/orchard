@@ -11,13 +11,17 @@ from pyscf import scf, gto
 from argparse import ArgumentParser
 
 from mldftdat.models.jax_pw6b95 import pw6b95_train, pw8b95, \
+    pw11b95, pw12b95, pw14b95, pw13b95, rpw12b95, \
     build_xcfunc_and_param_grad, PW6B95_DEFAULT_PARAMS, \
-    PW8B95_DEFAULT_PARAMS 
+    PW8B95_DEFAULT_PARAMS, PW11B95_DEFAULT_PARAMS, \
+    PW12B95_DEFAULT_PARAMS, PW14B95_DEFAULT_PARAMS, PW13B95_DEFAULT_PARAMS
 from mldftdat.analyzers import ElectronAnalyzer as Analyzer
 
 
 def get_base_energy(analyzer, d4func=None):
     restricted = True if analyzer.dm.ndim == 2 else False
+    analyzer.mol.build()
+    print(analyzer.mol.charge, analyzer.mol.spin)
     if restricted:
         calc = scf.RHF(analyzer.mol).density_fit()
     else:
@@ -43,7 +47,8 @@ def get_base_energy(analyzer, d4func=None):
 
 def load_molecular_data(basis, functional, mol_id, d4_functional=None):
     print('MOL LOAD', mol_id)
-    d = os.path.join(SAVE_ROOT, 'KS', functional, basis, mol_id, 'analysis_L1.hdf5')
+    #d = os.path.join(SAVE_ROOT, 'KS', functional, basis, mol_id, 'analysis_L1.hdf5')
+    d = os.path.join(SAVE_ROOT, 'KS', functional, basis, mol_id, 'analysis_L3.hdf5')
     analyzer = Analyzer.load(d)
     analyzer.set('restricted', analyzer.dm.ndim == 2)
     analyzer.set('e_base', get_base_energy(analyzer, d4_functional))
@@ -52,10 +57,9 @@ def load_molecular_data(basis, functional, mol_id, d4_functional=None):
     eb, exc, etot = analyzer.get('e_base'), analyzer.get('exc_orig'), analyzer.get('e_tot_orig')
     if abs(eb+exc-etot) > 1e-3:
         print(eb, exc, etot, eb+exc-etot)
-        raise ValueError
     return analyzer._data
 
-def get_jax_inputs_dict(mol_data):
+def get_jax_inputs_dict(mol_data, mlfunc=None):
     inputs_dict = {}
     _aca = np.ascontiguousarray
     tol = 1e-9
@@ -65,6 +69,20 @@ def get_jax_inputs_dict(mol_data):
         inp['e_base'] = data['e_base']
         rho = data['rho_data']
         exx = data['ex_energy_density']
+        if mlfunc is not None:
+            LDA_FACTOR = - 3.0 / 4.0 * (3.0 / np.pi)**(1.0/3)
+            feats = data['cider_descriptor_data']
+            sel = mlfunc.desc_order[:5] if mlfunc.desc_version == 'd' else mlfunc.desc_order[:6]
+            if data['restricted']:
+                FX = mlfunc.get_F(feats[sel])
+                xlda = LDA_FACTOR * rho[0]**(4.0/3)
+                exx = FX * xlda
+            else:
+                FXa = mlfunc.get_F(feats[0][sel])
+                FXb = mlfunc.get_F(feats[1][sel])
+                xlda_a = 2**(1.0/3) * LDA_FACTOR * rho[0,0]**(4.0/3)
+                xlda_b = 2**(1.0/3) * LDA_FACTOR * rho[1,0]**(4.0/3)
+                exx = np.stack([FXa * xlda_a, FXb * xlda_b])
         if data['restricted']:
             cond = rho[0] > tol
             sigma = 0.25 * np.einsum('xg,xg->g', rho[1:4,cond], rho[1:4,cond])
@@ -129,6 +147,23 @@ def compute_loss_and_grad(rxn_predictions, pnames):
             dloss[param] += dloss_tmp * rp['de_pred'][param]
     return loss, dloss
 
+def compute_loss_linear(rxn_predictions, linp):
+    nlinp = len(linp)
+    b = np.zeros(nlinp)
+    cov = np.zeros((nlinp, nlinp))
+    cov += 1e-5 * np.identity(nlinp)
+    loss = 0
+    for rxn_id, rp in rxn_predictions.items():
+        diff = rp['e_ref'] - rp['e_pred']
+        loss += 0.5 * rp['weight'] * diff**2
+        for i in range(nlinp):
+            b[i] += rp['weight'] * rp['de_pred'][linp[i]] * diff
+            for j in range(nlinp):
+                cov[i,j] += rp['weight'] * rp['de_pred'][linp[i]] * rp['de_pred'][linp[j]]
+    beta = np.linalg.solve(cov, b)
+    beta = {linp[i] : beta[i] for i in range(nlinp)}
+    return loss, beta
+
 def train_gd(vpg_func, inputs_dict, formulas, init_params, pweights,
              niter=10, tol=1e-3, rr=1e-3):
     """
@@ -143,6 +178,7 @@ def train_gd(vpg_func, inputs_dict, formulas, init_params, pweights,
     }
     """
     params = copy.deepcopy(init_params)
+    params = {k:np.float64(v) for k,v in params.items()}
     pnames = list(params.keys())
     old_params = copy.deepcopy(params)
     converged = False
@@ -163,8 +199,43 @@ def train_gd(vpg_func, inputs_dict, formulas, init_params, pweights,
         old_params = copy.deepcopy(params)
     return loss, params, param_diffs, converged
 
+def train_lr_plus_gd(vpg_func, inputs_dict, formulas, init_params, pweights,
+                     niter=10, tol=1e-3, rr=1e-3):
+    params = copy.deepcopy(init_params)
+    params = {k:np.float64(v) for k,v in params.items()}
+    pnames = list(params.keys())
+    linp = [p for p in pnames if p.startswith('X')]
+    nlinp = len(linp)
+    old_params = copy.deepcopy(params)
+    converged = False
+    param_diffs = {}
+    for iter_num in range(niter):
+        for p in linp:
+            params[p] = np.float64(0)
+        mol_predictions = compute_mol_preds_and_derivs(vpg_func, params, inputs_dict)
+        rxn_predictions = compute_rxn_preds_and_derivs(formulas, mol_predictions, pnames)
+        loss, beta = compute_loss_linear(rxn_predictions, linp)
+        for p in linp:
+            params[p] = beta[p]
+        print("LOSS 1 AT ITER={}: {}, PARAMS: {}".format(iter_num, loss, params))
+        mol_predictions = compute_mol_preds_and_derivs(vpg_func, params, inputs_dict)
+        rxn_predictions = compute_rxn_preds_and_derivs(formulas, mol_predictions, pnames)
+        loss, dloss = compute_loss_and_grad(rxn_predictions, pnames)
+        print("LOSS 2 AT ITER={}: {}, PARAMS: {}".format(iter_num, loss, params))
+        converged = True
+        for param in pnames:
+            params[param] -= rr * pweights[param] * dloss[param]
+            param_diffs[param] = params[param] - old_params[param]
+            if abs(param_diffs[param] * pweights[param]) > tol:
+                converged = False
+        if converged:
+            break
+        old_params = copy.deepcopy(params)
+    return loss, params, param_diffs, converged
+
 def train_bfgs(vpg_func, inputs_dict, formulas, init_params, pweights,
-               niter=10, tol=1e-3, rr=1e-3, mul_pweights=True):
+               niter=10, tol=1e-3, rr=1.0, mul_pweights=True,
+               train_method='BFGS'):
     pnames = list(init_params.keys())
     pnames.sort()
     def get_loss(params):
@@ -179,25 +250,24 @@ def train_bfgs(vpg_func, inputs_dict, formulas, init_params, pweights,
             dloss = [dloss[k]*pweights[k] for k in pnames]
         else:
             dloss = [dloss[k] for k in pnames]
+        dloss = [dl*rr for dl in dloss]
         print("CURRENT LOSS", loss)
         print(pnames)
         print(params)
-        return np.asarray(loss), np.asarray(dloss)
+        return rr*np.asarray(loss), np.asarray(dloss)
     if mul_pweights:
         init_params = np.array([init_params[k]/pweights[k] for k in pnames])
     else:
         init_params = np.array([init_params[k] for k in pnames])
     from scipy.optimize import minimize
     ## bounds = [(pweights[k]/2,pweights[k]*2) for k in pnames]
-    res = minimize(get_loss, init_params, method='L-BFGS-B', jac=True, options={'gtol': 1e-6, 'maxfun':100, 'maxiter':100})
+    res = minimize(get_loss, init_params, method=train_method, jac=True, options={'gtol': 1e-7, 'maxfun': 300, 'maxiter': 300})
     if mul_pweights:
         params = {k:v*pweights[k] for k,v in zip(pnames, res.x)}
     else:
         params = {k:v for k,v in zip(pnames, res.x)}
     param_diffs = {k:v for k,v in zip(pnames, res.jac)}
-    return res.fun, params, param_diffs, res.success
-
-train = train_bfgs
+    return res.fun / rr, params, param_diffs, res.success
 
 def main():
     m_desc = 'Train a parametric (JAX-implemented) XC functional'
@@ -219,7 +289,7 @@ def main():
                         help='If not None, save parameters to this file as yaml')
     parser.add_argument('--d4-functional', type=str, default=None,
                         help='Functional for parametrizing D4 correction, default no correction')
-    parser.add_argument('--relative-train-rate', type=float, default=1e-3,
+    parser.add_argument('--relative-train-rate', type=float, default=1.0,
                         help='Relative training rate')
     parser.add_argument('--param-weights-file', type=str, default=None,
                         help='File for weights determining parameter training weights')
@@ -227,11 +297,27 @@ def main():
                         help='Maximum number of iterations')
     parser.add_argument('--rtol', type=float, default=1e-3,
                         help='Relative tolerance (gets weighted by pweights) for convergence')
+    parser.add_argument('--mlfunc-path', type=str, default=None,
+                        help='If not None, replace exact exchange with the prediction of this CIDER model')
+    parser.add_argument('--train-method', type=str, default='BFGS')
+    parser.add_argument('--init-param-file', type=str, default=None)
     args = parser.parse_args()
+
+    print("TRAIN INPUTS")
+    print(args)
 
     formulas = {}
     for rxn_set in args.reaction_datasets:
         formulas.update(load_rxns(rxn_set))
+    """
+    rnames = list(formulas.keys())
+    np.random.seed(42)
+    np.random.shuffle(rnames)
+    new_formulas = {}
+    for r in rnames[:20]:
+        new_formulas[r] = formulas[r]
+    formulas = new_formulas
+    """
 
     mol_ids = set()
     for _, rxn in formulas.items():
@@ -256,8 +342,31 @@ def main():
         nargs = 9
         xcfunc = pw8b95
         init_params = copy.deepcopy(PW8B95_DEFAULT_PARAMS)
+    elif model_type == 'PW11B95':
+        nargs = 9
+        xcfunc = pw11b95
+        init_params = copy.deepcopy(PW11B95_DEFAULT_PARAMS)
+    elif model_type == 'PW12B95':
+        nargs = 9
+        xcfunc = pw12b95
+        init_params = copy.deepcopy(PW12B95_DEFAULT_PARAMS)
+    elif model_type == 'RPW12B95':
+        nargs = 9
+        xcfunc = rpw12b95
+        init_params = copy.deepcopy(PW12B95_DEFAULT_PARAMS)
+    elif model_type == 'PW13B95':
+        nargs = 9
+        xcfunc = pw13b95
+        init_params = copy.deepcopy(PW13B95_DEFAULT_PARAMS)
+    elif model_type == 'PW14B95':
+        nargs = 9
+        xcfunc = pw14b95
+        init_params = copy.deepcopy(PW14B95_DEFAULT_PARAMS)
     else:
         raise ValueError('Unsupported functional model')
+    if args.init_param_file is not None:
+        with open(args.init_param_file, 'r') as f:
+            init_params = yaml.load(f, Loader=yaml.Loader)
     vpg_func = build_xcfunc_and_param_grad(xcfunc, nargs)
 
     if args.param_weights_file is not None:
@@ -269,12 +378,29 @@ def main():
     for p in list(pweights.keys()):
         pweights[p] /= NTR
 
-    inputs_dict = get_jax_inputs_dict(mol_data)
+    if args.mlfunc_path is not None:
+        import joblib
+        mlfunc = joblib.load(os.path.expanduser(args.mlfunc_path))
+        inputs_dict = get_jax_inputs_dict(mol_data, mlfunc=mlfunc)
+    else:
+        inputs_dict = get_jax_inputs_dict(mol_data)
 
-    loss, params, params_diff, converged = train(
-        vpg_func, inputs_dict, formulas, init_params, pweights,
-        niter=args.niter, tol=args.rtol, rr=args.relative_train_rate
-    )
+    if 'builtin' in args.train_method:
+        if args.train_method == 'builtin_gd':
+            train = train_gd
+        else:
+            train = train_lr_plus_gd
+        loss, params, params_diff, converged = train(
+            vpg_func, inputs_dict, formulas, init_params, pweights,
+            niter=args.niter, tol=args.rtol, rr=args.relative_train_rate
+        )
+    else:
+        train = train_bfgs
+        loss, params, params_diff, converged = train(
+            vpg_func, inputs_dict, formulas, init_params, pweights,
+            niter=args.niter, tol=args.rtol, rr=args.relative_train_rate,
+            train_method=args.train_method
+        )
     result = {
         'converged': converged,
         'loss': loss,
