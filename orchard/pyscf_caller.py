@@ -86,7 +86,10 @@ def setup_calc(atoms, settings):
         calc = calc.density_fit(only_dfj=settings['control'].get('only_dfj') or False)
         if settings['control'].get('df_basis') is not None:
             calc.with_df.auxbasis = settings['control']['df_basis']
-    
+
+    if settings['calc'].get('nlc') is not None:
+        calc.nlcgrids.level = 1
+
     if settings['control']['remove_linear_dep']:
         calc = calc.apply(scf.addons.remove_linear_dep_)
 
