@@ -42,8 +42,9 @@ def get_pyscf_settings(settings_inp, default_settings=DEFAULT_PYSCF_SETTINGS):
     for k in list(settings.keys()):
         if k in inp_keys:
             settings[k].update(settings_inp[k])
-    if 'cider' in inp_keys:
-        settings['cider'] = settings_inp['cider']
+    for optk in ['cider', 'jax']:
+        if optk in inp_keys:
+            settings[optk] = settings_inp[optk]
     return settings
 
 

@@ -44,6 +44,7 @@ All PySCF settings supported:
         'xcname': str,
         'base_xc': str,
         'params': dict of params for use in jax functional,
+        'jax_thr': ...
     }
 }
 '''
@@ -89,17 +90,18 @@ def setup_calc(atoms, settings):
             settings['jax']['params'],
             spinpol=settings['control']['spinpol'],
             base_xc=settings['jax'].get('base_xc'),
+            jax_thr=settings['jax'].get('jax_thr'),
         )
     else:
         from mldftdat.dft.jax_ks import setup_jax_cider_calc
         import joblib
-        calc = setup_jax_exx_calc(
+        calc = setup_jax_cider_calc(
             mol,
             joblib.load(settings['cider']['mlfunc_filename']),
             settings['jax']['xcname'],
             settings['jax']['params'],
             spinpol=settings['control']['spinpol'],
-            base_xc=settings['jax'].get('base_xc'),
+            jax_thr=settings['jax'].get('jax_thr'),
         )
     calc.__dict__.update(settings['calc'])
     
