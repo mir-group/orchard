@@ -1,4 +1,5 @@
 from pyscf import gto, dft, scf
+from copy import deepcopy
 
 CALC_TYPES = {
     'RKS' : dft.rks.RKS,
@@ -39,10 +40,17 @@ All PySCF settings supported:
         'ckernel': str, libxc name of correlation kernel,
         'debug': bool,
     }
+    'jax': None or { # (overrides 'xc' in calc, can be used with cider)
+        'xcname': str,
+        'base_xc': str,
+        'params': dict of params for use in jax functional,
+        'jax_thr': ...
+    }
 }
 '''
 
 def setup_calc(atoms, settings):
+    settings = deepcopy(settings)
     mol = gto.Mole()
     fmt = settings['control']['mol_format']
     if fmt == 'xyz_file':
@@ -57,9 +65,12 @@ def setup_calc(atoms, settings):
     mol.__dict__.update(settings['mol'])
     mol.build()
 
-    if settings.get('cider') is None:
+    is_cider = settings.get('cider') is not None
+    is_jax = settings.get('jax') is not None
+    if (not is_cider) and (not is_jax):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
-    else:
+    elif is_cider and (not is_jax):
+        # TODO grid level settings
         from mldftdat.dft.ri_cider import setup_cider_calc
         import joblib
         calc = setup_cider_calc(
@@ -70,6 +81,27 @@ def setup_calc(atoms, settings):
             ckernel=settings['cider']['ckernel'],
             xmix=settings['cider']['xmix'],
             debug=settings['cider']['debug'],
+        )
+    elif (not is_cider) and is_jax:
+        from mldftdat.dft.jax_ks import setup_jax_exx_calc
+        calc = setup_jax_exx_calc(
+            mol,
+            settings['jax']['xcname'],
+            settings['jax']['params'],
+            spinpol=settings['control']['spinpol'],
+            base_xc=settings['jax'].get('base_xc'),
+            jax_thr=settings['jax'].get('jax_thr'),
+        )
+    else:
+        from mldftdat.dft.jax_ks import setup_jax_cider_calc
+        import joblib
+        calc = setup_jax_cider_calc(
+            mol,
+            joblib.load(settings['cider']['mlfunc_filename']),
+            settings['jax']['xcname'],
+            settings['jax']['params'],
+            spinpol=settings['control']['spinpol'],
+            jax_thr=settings['jax'].get('jax_thr'),
         )
     calc.__dict__.update(settings['calc'])
     
@@ -84,7 +116,10 @@ def setup_calc(atoms, settings):
         calc = calc.density_fit(only_dfj=settings['control'].get('only_dfj') or False)
         if settings['control'].get('df_basis') is not None:
             calc.with_df.auxbasis = settings['control']['df_basis']
-    
+
+    if settings['calc'].get('nlc') is not None:
+        calc.nlcgrids.level = 1
+
     if settings['control']['remove_linear_dep']:
         calc = calc.apply(scf.addons.remove_linear_dep_)
 
@@ -99,6 +134,11 @@ def setup_calc(atoms, settings):
     elif settings['control'].get('dftd4'):
         import dftd4.pyscf as pyd4
         calc = pyd4.energy(calc)
+        d4func = settings['control'].get('dftd4_functional')
+        if d4func is not None:
+            calc.with_dftd4 = pyd4.DFTD4Dispersion(
+                calc.mol, xc=d4func.upper().replace(" ", "")
+            )
 
     if settings['control'].get('soscf'):
         calc = calc.newton()

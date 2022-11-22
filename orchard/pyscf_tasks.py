@@ -42,8 +42,9 @@ def get_pyscf_settings(settings_inp, default_settings=DEFAULT_PYSCF_SETTINGS):
     for k in list(settings.keys()):
         if k in inp_keys:
             settings[k].update(settings_inp[k])
-    if 'cider' in inp_keys:
-        settings['cider'] = settings_inp['cider']
+    for optk in ['cider', 'jax']:
+        if optk in inp_keys:
+            settings[optk] = settings_inp[optk]
     return settings
 
 
@@ -126,7 +127,7 @@ class SCFCalcFromRestart(FiretaskBase):
         if self.get('require_converged') is None:
             self['require_converged'] = True
         if (not calc.converged) and self['require_converged']:
-            assert RuntimeError("SCF calculation did not converge!")
+            raise RuntimeError("SCF calculation did not converge!")
         update_spec = {
             'calc' : calc,
             'e_tot': calc.e_tot,
@@ -189,7 +190,17 @@ class SaveSCFResults(FiretaskBase):
 class RunAnalysis(FiretaskBase):
 
     required_params = ['save_root_dir', 'system_id']
-    optional_params = ['grids_level']
+    optional_params = ['grids_level', 'cider_kwargs_and_version']
+
+    def get_cider_features(self, analyzer, restricted):
+        from mldftdat.density import get_exchange_descriptors2
+        gg_kwargs = self['cider_kwargs_and_version']
+        version = gg_kwargs.pop('version')
+        descriptor_data = get_exchange_descriptors2(
+            analyzer, restricted=restricted, version=version,
+            **gg_kwargs
+        )
+        analyzer.set('cider_descriptor_data', descriptor_data)
 
     def run_task(self, fw_spec):
         from mldftdat.analyzers import ElectronAnalyzer
@@ -202,7 +213,9 @@ class RunAnalysis(FiretaskBase):
             fw_spec['method_name']
         )
         save_file = os.path.join(save_dir,
-            'analysis_L{}.hdf5'.format(calc.grids_level))
+            'analysis_L{}.hdf5'.format(analyzer.grids_level))
+        if self.get('cider_kwargs_and_version') is not None:
+            self.get_cider_features(analyzer, analyzer.dm.ndim==2)
         analyzer.dump(save_file)
 
         return FWAction(stored_data={'save_dir': save_dir})
@@ -238,7 +251,7 @@ def make_etot_firework_restart(new_settings, new_method_name, system_id,
     return Firework([t1, t2, t3], name=name)
 
 def make_analysis_firework(method_name, system_id, basis, save_root_dir,
-                           grids_level=None, name=None):
+                           grids_level=None, name=None, **kwargs):
     t1 = LoadSCFCalc(
         save_root_dir=save_root_dir, method_name=method_name,
         basis=basis, system_id=system_id,
@@ -248,14 +261,16 @@ def make_analysis_firework(method_name, system_id, basis, save_root_dir,
         tasks.append(RunAnalysis(
             save_root_dir=save_root_dir,
             system_id=system_id,
-            grids_level=grids_level,
+            grids_level=grids_level, **kwargs
         ))
-    elif isinstance(grids_level, tuple):
+    elif isinstance(grids_level, (tuple, list)):
         for lvl in grids_level:
             tasks.append(RunAnalysis(
                 save_root_dir=save_root_dir,
                 system_id=system_id,
-                grids_level=lvl,
+                grids_level=lvl, **kwargs
             ))
+    else:
+        raise ValueError('Unsupported grids_level')
     return Firework(tasks, name=name)
 
