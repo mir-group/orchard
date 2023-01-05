@@ -1,6 +1,7 @@
 from gpaw import GPAW, PW
 from gpaw import Davidson, CG, RMMDIIS
 from ase import Atoms
+from ase.units import Ha, Bohr
 import copy, os
 
 def setup_gpaw(settings_inp, calc=None):
@@ -25,7 +26,7 @@ def setup_gpaw(settings_inp, calc=None):
         mom = 1 + control['multipole_corr']
         mom = mom * mom
         settings['poissonsolver'] = MomentCorrectionPoissonSolver(poissonsolver=PoissonSolver(),
-                                                      moment_corrections=mom)
+                                                                  moment_corrections=mom)
     if control.get('eigensolver') is not None:
         eigd = control.get('eigensolver')
         eigname = eigd.pop('name')
@@ -45,7 +46,12 @@ def setup_gpaw(settings_inp, calc=None):
         settings['mode'] = 'lcao'
         settings['eigensolver'] = None
     elif control['mode'] != 'fd':
-        settings['mode'] = PW(control['mode'])
+        settings['mode'] = PW(control['mode']) # mode = encut
+        if settings['calc'].get('h') is None:
+            # Default h should fit encut
+            encut = control['mode']
+            gcut = np.sqrt(2 * encut / Ha)
+            settings['calc']['h'] = (Bohr * np.pi) / (2 * gcut)
     else:
         settings['mode'] = 'fd'
 
