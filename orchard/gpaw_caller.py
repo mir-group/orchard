@@ -38,6 +38,8 @@ def setup_gpaw(settings_inp, calc=None):
         else:
             raise ValueError('Unrecognized solver name')
         settings['eigensolver'] = solver
+    else:
+        eigname = None
     if control.get('mode') is None:
         if calc is None:
             raise ValueError('Need mode or calc')
@@ -84,7 +86,9 @@ def get_nscf_routine(settings_inp):
             return get_nscf_energy_nonhybrid(atoms, settings['xc'])
     elif settings.get('xc') in ['EXX', 'PBE0', 'HSE03', 'HSE06', 'B3LYP']:
         def routine(atoms):
-            return get_nscf_energy_hybrid(atoms, settings['xc'], settings['kpts'])
+            assert 'xc' in settings, 'xc needed for nscf'
+            assert 'kpts' in settings, 'kpts needed for nscf'
+            return get_nscf_energy_hybrid(atoms, settings, control)
     else:
         def routine(atoms):
             return get_nscf_energy_nonhybrid(atoms, settings['xc'])
@@ -93,13 +97,18 @@ def get_nscf_routine(settings_inp):
 def get_total_energy(atoms):
     return atoms.get_potential_energy()
 
-def get_nscf_energy_hybrid(atoms, xcname, hybrid_kpts):
+def get_nscf_energy_hybrid(atoms, settings, control):
     from gpaw.hybrids.energy import non_self_consistent_energy
+    xcname = settings.pop('xc')
     #atoms.calc.reset()
     #atoms.calc.initialize()
     e0 = atoms.get_potential_energy()
     #atoms.calc.set(kpts=(8,8,8))
-    atoms.calc.set(kpts=hybrid_kpts, txt='-', verbose=1)
+    settings['txt'] = settings.get('txt') or '-'
+    #settings['verbose'] = settings.get('verbose') or 1
+    atoms.calc.set(**settings)
+    if control.get('parallel') is not None:
+        atoms.calc.parallel.update(control['parallel'])   
     e0t = atoms.get_potential_energy()
     if xcname == 'EXX':
         et = non_self_consistent_energy(atoms.calc, xcname=xcname)[3:].sum()
