@@ -39,6 +39,10 @@ All PySCF settings supported:
         'xkernel': str, libxc name of exchange kernel,
         'ckernel': str, libxc name of correlation kernel,
         'debug': bool,
+        'amin': float,
+        'amax': float,
+        'lambd': float,
+        'aux_beta': float,
     }
     'jax': None or { # (overrides 'xc' in calc, can be used with cider)
         'xcname': str,
@@ -71,19 +75,17 @@ def setup_calc(atoms, settings):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
     elif is_cider and (not is_jax):
         # TODO grid level settings
-        from mldftdat.dft.ri_cider import setup_cider_calc
+        from ciderpress.dft.ri_cider import setup_cider_calc
         import joblib
+        mlfunc_filename = settings['cider'].pop('mlfunc_filename')
         calc = setup_cider_calc(
             mol,
-            joblib.load(settings['cider']['mlfunc_filename']),
+            joblib.load(mlfunc_filename),
             spinpol=settings['control']['spinpol'],
-            xkernel=settings['cider']['xkernel'],
-            ckernel=settings['cider']['ckernel'],
-            xmix=settings['cider']['xmix'],
-            debug=settings['cider']['debug'],
+            **(settings['cider']),
         )
     elif (not is_cider) and is_jax:
-        from mldftdat.dft.jax_ks import setup_jax_exx_calc
+        from ciderpress.dft.jax_ks import setup_jax_exx_calc
         calc = setup_jax_exx_calc(
             mol,
             settings['jax']['xcname'],
@@ -93,15 +95,18 @@ def setup_calc(atoms, settings):
             jax_thr=settings['jax'].get('jax_thr'),
         )
     else:
-        from mldftdat.dft.jax_ks import setup_jax_cider_calc
+        from ciderpress.dft.jax_ks import setup_jax_cider_calc
         import joblib
+        mlfunc_filename = settings['cider'].pop('mlfunc_filename')
         calc = setup_jax_cider_calc(
             mol,
-            joblib.load(settings['cider']['mlfunc_filename']),
+            joblib.load(mlfunc_filename),
             settings['jax']['xcname'],
             settings['jax']['params'],
             spinpol=settings['control']['spinpol'],
+            base_xc=settings['jax'].get('base_xc'),
             jax_thr=settings['jax'].get('jax_thr'),
+            **(settings['cider']),
         )
     calc.__dict__.update(settings['calc'])
     

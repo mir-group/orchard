@@ -3,8 +3,8 @@ import os
 import numpy as np
 from joblib import dump
 from orchard.workflow_utils import SAVE_ROOT
-from mldftdat.models.gp import *
-from mldftdat.data import load_descriptors, filter_descriptors
+from ciderpress.models.gp import *
+from ciderpress.data import load_descriptors, filter_descriptors
 import yaml
 
 def parse_settings(args):

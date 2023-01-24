@@ -56,7 +56,11 @@ def get_accdb_formulas(dataset_eval_name):
     return formulas
 
 def parse_dataset_eval(subdb_names, dataset_fname):
-    formulas = get_accdb_formulas(dataset_fname)
+    if dataset_fname.endswith('.yaml'):
+        with open(dataset_fname, 'r') as f:
+            formulas = yaml.load(f, Loader=yaml.Loader)
+    else:
+        formulas = get_accdb_formulas(dataset_fname)
     cats = {}
     sumabs = {}
     counts = {}

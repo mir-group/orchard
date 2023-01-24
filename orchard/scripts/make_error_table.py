@@ -1,7 +1,7 @@
-from mldftdat.data import predict_exchange, predict_correlation,\
+from ciderpress.data import predict_exchange, predict_correlation,\
                           predict_total_exchange_unrestricted
-from mldftdat.analyzers import ElectronAnalyzer
-from mldftdat.models.compute_mol_cov import compute_x_pred
+from ciderpress.analyzers import ElectronAnalyzer
+from ciderpress.models.compute_mol_cov import compute_x_pred
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
 import numpy as np 
 from collections import Counter

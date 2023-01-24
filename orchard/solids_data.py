@@ -1,5 +1,5 @@
 import numpy as np
-from mldftdat.gpaw.gpaw_plot import *
+from ciderpress.gpaw.gpaw_plot import *
 from gpaw.sphere.lebedev import R_nv, weight_n, Y_nL
 from ase.units import Bohr
 from gpaw import restart as gpaw_restart

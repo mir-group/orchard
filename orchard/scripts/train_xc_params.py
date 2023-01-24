@@ -10,12 +10,12 @@ from pyscf import scf, gto
 
 from argparse import ArgumentParser
 
-from mldftdat.models.jax_pw6b95 import pw6b95_train, pw8b95, \
+from ciderpress.models.jax_pw6b95 import pw6b95_train, pw8b95, \
     pw11b95, pw12b95, pw14b95, pw13b95, rpw12b95, \
     build_xcfunc_and_param_grad, PW6B95_DEFAULT_PARAMS, \
     PW8B95_DEFAULT_PARAMS, PW11B95_DEFAULT_PARAMS, \
     PW12B95_DEFAULT_PARAMS, PW14B95_DEFAULT_PARAMS, PW13B95_DEFAULT_PARAMS
-from mldftdat.analyzers import ElectronAnalyzer as Analyzer
+from ciderpress.analyzers import ElectronAnalyzer as Analyzer
 
 
 def get_base_energy(analyzer, d4func=None):

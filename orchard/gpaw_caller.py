@@ -1,13 +1,14 @@
 from gpaw import GPAW, PW
 from gpaw import Davidson, CG, RMMDIIS
 from ase import Atoms
+from ase.units import Ha, Bohr
 import copy, os
 
 def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
+        from ciderpress.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
         try:
@@ -25,7 +26,7 @@ def setup_gpaw(settings_inp, calc=None):
         mom = 1 + control['multipole_corr']
         mom = mom * mom
         settings['poissonsolver'] = MomentCorrectionPoissonSolver(poissonsolver=PoissonSolver(),
-                                                      moment_corrections=mom)
+                                                                  moment_corrections=mom)
     if control.get('eigensolver') is not None:
         eigd = control.get('eigensolver')
         eigname = eigd.pop('name')
@@ -38,6 +39,8 @@ def setup_gpaw(settings_inp, calc=None):
         else:
             raise ValueError('Unrecognized solver name')
         settings['eigensolver'] = solver
+    else:
+        eigname = None
     if control.get('mode') is None:
         if calc is None:
             raise ValueError('Need mode or calc')
@@ -45,7 +48,12 @@ def setup_gpaw(settings_inp, calc=None):
         settings['mode'] = 'lcao'
         settings['eigensolver'] = None
     elif control['mode'] != 'fd':
-        settings['mode'] = PW(control['mode'])
+        settings['mode'] = PW(control['mode']) # mode = encut
+        if settings['calc'].get('h') is None:
+            # Default h should fit encut
+            encut = control['mode']
+            gcut = np.sqrt(2 * encut / Ha)
+            settings['calc']['h'] = (Bohr * np.pi) / (2 * gcut)
     else:
         settings['mode'] = 'fd'
 
@@ -67,7 +75,7 @@ def get_nscf_routine(settings_inp):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
+        from ciderpress.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
         try:
@@ -84,7 +92,9 @@ def get_nscf_routine(settings_inp):
             return get_nscf_energy_nonhybrid(atoms, settings['xc'])
     elif settings.get('xc') in ['EXX', 'PBE0', 'HSE03', 'HSE06', 'B3LYP']:
         def routine(atoms):
-            return get_nscf_energy_hybrid(atoms, settings['xc'], settings['kpts'])
+            assert 'xc' in settings, 'xc needed for nscf'
+            assert 'kpts' in settings, 'kpts needed for nscf'
+            return get_nscf_energy_hybrid(atoms, settings, control)
     else:
         def routine(atoms):
             return get_nscf_energy_nonhybrid(atoms, settings['xc'])
@@ -93,13 +103,18 @@ def get_nscf_routine(settings_inp):
 def get_total_energy(atoms):
     return atoms.get_potential_energy()
 
-def get_nscf_energy_hybrid(atoms, xcname, hybrid_kpts):
+def get_nscf_energy_hybrid(atoms, settings, control):
     from gpaw.hybrids.energy import non_self_consistent_energy
+    xcname = settings.pop('xc')
     #atoms.calc.reset()
     #atoms.calc.initialize()
     e0 = atoms.get_potential_energy()
     #atoms.calc.set(kpts=(8,8,8))
-    atoms.calc.set(kpts=hybrid_kpts, txt='-', verbose=1)
+    settings['txt'] = settings.get('txt') or '-'
+    #settings['verbose'] = settings.get('verbose') or 1
+    atoms.calc.set(**settings)
+    if control.get('parallel') is not None:
+        atoms.calc.parallel.update(control['parallel'])   
     e0t = atoms.get_potential_energy()
     if xcname == 'EXX':
         et = non_self_consistent_energy(atoms.calc, xcname=xcname)[3:].sum()

@@ -145,7 +145,7 @@ class SCFCalcFromRestart(FiretaskBase):
 class SaveSCFResults(FiretaskBase):
 
     required_params = ['save_root_dir']
-    optional_params = ['no_overwrite']
+    optional_params = ['no_overwrite', 'write_data']
 
     def run_task(self, fw_spec):
         save_dir = get_save_dir(
@@ -164,11 +164,14 @@ class SaveSCFResults(FiretaskBase):
         calc = fw_spec['calc']
         chkmol = os.path.join(save_dir, 'mol.chk')
         lib.chkfile.save_mol(calc.mol, chkmol)
-        hdf5file = os.path.join(save_dir, 'data.hdf5')
-        lib.chkfile.save(hdf5file, 'calc/e_tot', calc.e_tot)
-        lib.chkfile.save(hdf5file, 'calc/mo_coeff', calc.mo_coeff)
-        lib.chkfile.save(hdf5file, 'calc/mo_energy', calc.mo_energy)
-        lib.chkfile.save(hdf5file, 'calc/mo_occ', calc.mo_occ)
+        if self.get('write_data') is None:
+            self['write_data'] = True
+        if self['write_data']:
+            hdf5file = os.path.join(save_dir, 'data.hdf5')
+            lib.chkfile.save(hdf5file, 'calc/e_tot', calc.e_tot)
+            lib.chkfile.save(hdf5file, 'calc/mo_coeff', calc.mo_coeff)
+            lib.chkfile.save(hdf5file, 'calc/mo_energy', calc.mo_energy)
+            lib.chkfile.save(hdf5file, 'calc/mo_occ', calc.mo_occ)
         out_data = {
             'struct': fw_spec['struct'],
             'settings': fw_spec['settings'],
@@ -193,7 +196,7 @@ class RunAnalysis(FiretaskBase):
     optional_params = ['grids_level', 'cider_kwargs_and_version']
 
     def get_cider_features(self, analyzer, restricted):
-        from mldftdat.density import get_exchange_descriptors2
+        from ciderpress.density import get_exchange_descriptors2
         gg_kwargs = self['cider_kwargs_and_version']
         version = gg_kwargs.pop('version')
         descriptor_data = get_exchange_descriptors2(
@@ -203,7 +206,7 @@ class RunAnalysis(FiretaskBase):
         analyzer.set('cider_descriptor_data', descriptor_data)
 
     def run_task(self, fw_spec):
-        from mldftdat.analyzers import ElectronAnalyzer
+        from ciderpress.analyzers import ElectronAnalyzer
         calc = fw_spec['calc']
         analyzer = ElectronAnalyzer.from_calc(calc, self.get('grids_level'))
         analyzer.perform_full_analysis()
