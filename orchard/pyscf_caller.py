@@ -75,7 +75,7 @@ def setup_calc(atoms, settings):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
     elif is_cider and (not is_jax):
         # TODO grid level settings
-        from mldftdat.dft.ri_cider import setup_cider_calc
+        from ciderpress.dft.ri_cider import setup_cider_calc
         import joblib
         mlfunc_filename = settings['cider'].pop('mlfunc_filename')
         calc = setup_cider_calc(
@@ -85,7 +85,7 @@ def setup_calc(atoms, settings):
             **(settings['cider']),
         )
     elif (not is_cider) and is_jax:
-        from mldftdat.dft.jax_ks import setup_jax_exx_calc
+        from ciderpress.dft.jax_ks import setup_jax_exx_calc
         calc = setup_jax_exx_calc(
             mol,
             settings['jax']['xcname'],
@@ -95,7 +95,7 @@ def setup_calc(atoms, settings):
             jax_thr=settings['jax'].get('jax_thr'),
         )
     else:
-        from mldftdat.dft.jax_ks import setup_jax_cider_calc
+        from ciderpress.dft.jax_ks import setup_jax_cider_calc
         import joblib
         mlfunc_filename = settings['cider'].pop('mlfunc_filename')
         calc = setup_jax_cider_calc(

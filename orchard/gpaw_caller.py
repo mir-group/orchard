@@ -8,7 +8,7 @@ def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
+        from ciderpress.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
         try:
@@ -75,7 +75,7 @@ def get_nscf_routine(settings_inp):
     settings = settings_inp['calc']
     control = settings_inp['control']
     if control.get('cider') is not None:
-        from mldftdat.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
+        from ciderpress.gpaw.cider_paw import CiderGGAPASDW, CiderMGGAPASDW
         cider_settings = control['cider']
         fname = cider_settings.pop('fname')
         try:

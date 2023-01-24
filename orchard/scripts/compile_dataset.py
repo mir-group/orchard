@@ -2,10 +2,10 @@ import time
 from pyscf import scf
 import os, time
 import numpy as np
-from mldftdat.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
+from ciderpress.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
-from mldftdat.density import get_exchange_descriptors2, LDA_FACTOR, GG_AMIN
-from mldftdat.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
+from ciderpress.density import get_exchange_descriptors2, LDA_FACTOR, GG_AMIN
+from ciderpress.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
 import logging
 import yaml
 from ase.data import chemical_symbols, atomic_numbers, ground_state_magnetic_moments

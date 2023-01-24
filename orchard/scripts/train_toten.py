@@ -3,8 +3,8 @@ import os
 import numpy as np
 from joblib import dump, load
 from orchard.workflow_utils import SAVE_ROOT, load_rxns
-from mldftdat.models.gp import *
-from mldftdat.models.compute_mol_cov import compute_tr_covs, compute_tr_covs_ex, \
+from ciderpress.models.gp import *
+from ciderpress.models.compute_mol_cov import compute_tr_covs, compute_tr_covs_ex, \
                                             compute_heg_covs, compute_new_alpha, \
                                             reduce_model_size_
 import yaml

@@ -196,7 +196,7 @@ class RunAnalysis(FiretaskBase):
     optional_params = ['grids_level', 'cider_kwargs_and_version']
 
     def get_cider_features(self, analyzer, restricted):
-        from mldftdat.density import get_exchange_descriptors2
+        from ciderpress.density import get_exchange_descriptors2
         gg_kwargs = self['cider_kwargs_and_version']
         version = gg_kwargs.pop('version')
         descriptor_data = get_exchange_descriptors2(
@@ -206,7 +206,7 @@ class RunAnalysis(FiretaskBase):
         analyzer.set('cider_descriptor_data', descriptor_data)
 
     def run_task(self, fw_spec):
-        from mldftdat.analyzers import ElectronAnalyzer
+        from ciderpress.analyzers import ElectronAnalyzer
         calc = fw_spec['calc']
         analyzer = ElectronAnalyzer.from_calc(calc, self.get('grids_level'))
         analyzer.perform_full_analysis()

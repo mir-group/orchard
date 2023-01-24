@@ -2,13 +2,13 @@ import yaml
 import numpy as np
 from interpolation.splines import UCGrid, CGrid, nodes
 from interpolation.splines import filter_cubic, eval_cubic
-from mldftdat.dft.xc_models import NormGPFunctional
+from ciderpress.dft.xc_models import NormGPFunctional
 from sklearn.gaussian_process.kernels import RBF
 from itertools import combinations
 from argparse import ArgumentParser
 from joblib import load, dump
 from orchard.scripts.train_gp import parse_dataset
-from mldftdat.models.kernels import *
+from ciderpress.models.kernels import *
 import pyscf.lib
 
 """
@@ -107,7 +107,7 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
                                  a0=gpr.a0, fac_mul=gpr.fac_mul,
                                  amin=gpr.amin)
     if gpr.args.use_ex_kernel:
-        from mldftdat.models.gp import XED_Y_CONVERTERS
+        from ciderpress.models.gp import XED_Y_CONVERTERS
         evaluator.xed_y_converter = XED_Y_CONVERTERS['CHACHIYO']
     
     return evaluator
@@ -220,7 +220,7 @@ def get_mapped_gp_evaluator(gpr, test_x=None, test_y=None, test_rho_data=None,
                                  a0=gpr.a0, fac_mul=gpr.fac_mul,
                                  amin=gpr.amin, args=gpr.args)
     if gpr.args.use_ex_kernel:
-        from mldftdat.models.gp import XED_Y_CONVERTERS
+        from ciderpress.models.gp import XED_Y_CONVERTERS
         evaluator.xed_y_converter = XED_Y_CONVERTERS['CHACHIYO']
 
     if n == 1 and order == 2:
