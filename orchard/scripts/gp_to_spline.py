@@ -218,7 +218,7 @@ def get_mapped_gp_evaluator(gpr, test_x=None, test_y=None, test_rho_data=None,
                                  gpr.desc_order, const=const,
                                  desc_version=gpr.desc_version,
                                  a0=gpr.a0, fac_mul=gpr.fac_mul,
-                                 amin=gpr.amin)
+                                 amin=gpr.amin, args=gpr.args)
     if gpr.args.use_ex_kernel:
         from mldftdat.models.gp import XED_Y_CONVERTERS
         evaluator.xed_y_converter = XED_Y_CONVERTERS['CHACHIYO']
@@ -325,15 +325,12 @@ def main():
                                             srbf_density=args.srbfd,
                                             arbf_density=args.arbfd,
                                             max_ngrid=args.maxng)
-    evaluator.args = gpr.args
     evaluator.fx_baseline = gpr.xed_y_converter[2]
     evaluator.fxb_num = gpr.xed_y_converter[3]
     evaluator.desc_version = gpr.desc_version
     evaluator.amin = gpr.amin
     evaluator.a0 = gpr.a0
     evaluator.fac_mul = gpr.fac_mul
-    if evaluator.desc_version in ['b', 'd']:
-        evaluator.vvmul = gpr.vvmul
     dump(evaluator, args.outname)
 
 if __name__ == '__main__':
