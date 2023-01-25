@@ -13,7 +13,6 @@ import copy
 GPAW_CALL_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_caller')
 
 DEFAULT_GPAW_CALC_SETTINGS = {
-    'h': 0.15,
     'xc': 'PBE',
     'txt': 'calc.txt',
     'maxiter': 200,

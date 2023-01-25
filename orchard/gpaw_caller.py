@@ -3,6 +3,8 @@ from gpaw import Davidson, CG, RMMDIIS
 from ase import Atoms
 from ase.units import Ha, Bohr
 import copy, os
+import numpy as np
+
 
 def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp['calc']
@@ -49,11 +51,11 @@ def setup_gpaw(settings_inp, calc=None):
         settings['eigensolver'] = None
     elif control['mode'] != 'fd':
         settings['mode'] = PW(control['mode']) # mode = encut
-        if settings['calc'].get('h') is None:
+        if settings.get('h') is None:
             # Default h should fit encut
             encut = control['mode']
             gcut = np.sqrt(2 * encut / Ha)
-            settings['calc']['h'] = (Bohr * np.pi) / (2 * gcut)
+            settings['h'] = (Bohr * np.pi) / (2 * gcut)
     else:
         settings['mode'] = 'fd'
 
