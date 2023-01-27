@@ -85,7 +85,7 @@ def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None, update_only=False
     )
     return cmd, settings['control']['save_calc'], settings
 
-def call_gpaw(cmd, logfile):
+def call_gpaw(cmd, logfile, require_converged=True):
     if logfile == '-':
         logfile = 'calc.txt'
     logfile = os.path.abspath(logfile)
@@ -102,7 +102,7 @@ def call_gpaw(cmd, logfile):
     else:
         with open('gpaw_outdata.tmp', 'r') as f:
             results = yaml.load(f, Loader=yaml.Loader)
-        if (not results['converged']) and self['require_converged']:
+        if (not results['converged']) and require_converged:
             successful = False#raise RuntimeError('GPAW calculation did not converge!')
         else:
             successful = True
@@ -131,7 +131,9 @@ class GPAWSinglePointSCF(FiretaskBase):
         )
 
         logfile = settings['calc'].get('txt') or 'calc.txt'
-        successful, update_spec, wall_time, logfile = call_gpaw(cmd, logfile)
+        successful, update_spec, wall_time, logfile = call_gpaw(
+            cmd, logfile, require_converged=self['require_converged']
+        )
 
         update_spec.update({
             'successful': successful,
