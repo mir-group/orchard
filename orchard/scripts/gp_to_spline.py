@@ -105,7 +105,7 @@ def get_mapped_gp_evaluator_simple(gpr, rbf_density=8, max_ngrid=120):
                                  gpr.desc_order, const=0.0,
                                  desc_version=gpr.desc_version,
                                  a0=gpr.a0, fac_mul=gpr.fac_mul,
-                                 amin=gpr.amin)
+                                 amin=gpr.amin, args=gpr.args)
     if gpr.args.use_ex_kernel:
         from ciderpress.models.gp import XED_Y_CONVERTERS
         evaluator.xed_y_converter = XED_Y_CONVERTERS['CHACHIYO']
