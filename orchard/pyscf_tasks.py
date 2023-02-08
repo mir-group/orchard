@@ -228,13 +228,14 @@ def make_etot_firework(
             struct, settings, method_name, system_id,
             save_root_dir, no_overwrite=False,
             require_converged=True, method_description=None,
-            name=None):
+            write_data=None, name=None):
     struct = struct.todict()
     t1 = SCFCalc(
             struct=struct, settings=settings, method_name=method_name, system_id=system_id,
             require_converged=require_converged, method_description=method_description
         )
-    t2 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
+    t2 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite,
+                        write_data=write_data)
     return Firework([t1, t2], name=name)
 
 
@@ -242,7 +243,7 @@ def make_etot_firework_restart(new_settings, new_method_name, system_id,
                                old_basis, old_method_name,
                                save_root_dir, no_overwrite=False,
                                require_converged=True, new_method_description=None,
-                               name=None):
+                               write_data=None, name=None):
     t1 = LoadSCFCalc(
         save_root_dir=save_root_dir, method_name=old_method_name,
         basis=old_basis, system_id=system_id
@@ -250,7 +251,8 @@ def make_etot_firework_restart(new_settings, new_method_name, system_id,
     t2 = SCFCalcFromRestart(new_settings=new_settings, new_method_name=new_method_name,
                             require_converged=require_converged,
                             new_method_description=new_method_description)
-    t3 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite)
+    t3 = SaveSCFResults(save_root_dir=save_root_dir, no_overwrite=no_overwrite,
+                        write_data=write_data)
     return Firework([t1, t2, t3], name=name)
 
 def make_analysis_firework(method_name, system_id, basis, save_root_dir,
