@@ -41,6 +41,22 @@ def get_accdb_data(formula, FUNCTIONAL, BASIS, per_bond=False):
     else:
         return pred_energy, formula['energy']
 
+def get_accdb_pts(snames, FUNCTIONAL, BASIS):
+    vals = {}
+    for sname in snames:
+        dname = get_save_dir(MLDFTDB_ROOT, 'KS', BASIS, 'GMTKN55/'+sname, FUNCTIONAL)
+        vals[sname] = get_run_total_energy(dname)
+    return vals
+
+def get_accdb_rvals(formulas, vals):
+    rvals = {}
+    for rname, formula in formulas.items():
+        pred_energy = 0
+        for sname, count in zip(formula['structs'], formula['counts']):
+            pred_energy += count * vals[sname]
+        rvals[rname] = pred_energy
+    return rvals
+
 def get_accdb_formulas(dataset_eval_name):
     with open(dataset_eval_name, 'r') as f:
         lines = f.readlines()
@@ -122,6 +138,7 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names,
     for data_name in data_names:
         #print(data_name)
         pred_energy, energy = get_accdb_data(formulas[data_name], FUNCTIONAL, BASIS)
+        exact_ref = energy
         if comp_functional is not None:
             energy, _ = get_accdb_data(formulas[data_name], comp_functional, BASIS)
             energy *= KCAL_PER_HA
@@ -131,8 +148,10 @@ def get_accdb_errors(formulas, FUNCTIONAL, BASIS, data_names,
             'true' : energy,
             'weight': 1.0 / (formulas[data_name].get('noise_factor') or 1.0),
         }
+        #print(data_name, pred_energy-energy)
         errs.append(pred_energy-energy)
-        refs.append(energy)
+        #refs.append(energy)
+        refs.append(exact_ref)
     errs = np.array(errs)
     me = np.mean(errs)
     mae = np.mean(np.abs(errs))

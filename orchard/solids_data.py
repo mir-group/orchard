@@ -146,9 +146,9 @@ def get_sol62_results(sysid, method, GEOM_FUNCTIONAL='PBE'):
     for Z, count in formula.items():
         ntot += count
         e_atom_min = 1e10
+        found_atom = False
         for magmom in range(0,10):
-            #if magmom != int(ground_state_magnetic_moments[Z]):
-            #    continue
+            found_atom = True
             atom_id = 'SOL62/{}/atoms/{}_magmom{}'.format(
                 GEOM_FUNCTIONAL,
                 chemical_symbols[Z],
@@ -161,9 +161,9 @@ def get_sol62_results(sysid, method, GEOM_FUNCTIONAL='PBE'):
                     atom_outdata = yaml.load(f, Loader=yaml.Loader)
                 e_atom_min = min(e_atom_min, atom_outdata['e_tot'])
             else:
-                continue
-                #print('Missing atom gs', chemical_symbols[Z], ground_state_magnetic_moments[Z])
-                #return 0
+                continue #raise FileNotFoundError
+        if not found_atom:
+            raise FileNotFoundError
         ecoh -= count * e_atom_min
     return ecoh / ntot
 
