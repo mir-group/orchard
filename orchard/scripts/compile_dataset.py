@@ -1,11 +1,13 @@
 import time
 from pyscf import scf
+from pyscf.lib import chkfile
 import os, time
 import numpy as np
 from ciderpress.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
 from ciderpress.density import get_exchange_descriptors2, LDA_FACTOR, GG_AMIN
 from ciderpress.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
+from ciderpress.descriptors import get_descriptors
 import logging
 import yaml
 from ase.data import chemical_symbols, atomic_numbers, ground_state_magnetic_moments
@@ -126,6 +128,119 @@ def compile_dataset2(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
         yaml.dump(settings, f)
 
 
+def compile_single_system(save_file, analyzer_file, version,
+                          sparse_level, orbs, save_baselines, gg_kwargs):
+    start = time.monotonic()
+    analyzer = ElectronAnalyzer.load(analyzer_file)
+    if sparse_level is not None:
+        Analyzer = UHFAnalyzer if analyzer.atype == 'UHF' else RHFAnalyzer
+        analyzer = Analyzer(analyzer.mol, analyzer.dm, grids_level=sparse_level)
+        analyzer.perform_full_analysis()
+    else:
+        analyzer.get_rho_data()
+    end = time.monotonic()
+    logging.info('Analyzer load time {}'.format(end - start))
+
+    start = time.monotonic()
+    desc = get_descriptors(
+        analyzer, version=version, orbs=orbs, **gg_kwargs
+    )
+    rho_data = get_descriptors(
+        analyzer, version='l', orbs=orbs, **gg_kwargs
+    )
+    if orbs is not None:
+        desc, ddesc, eigvals = desc
+        rho_data, drho_data, _ = rho_data
+    end = time.monotonic()
+    logging.info('Get descriptor time {}'.format(end - start))
+    values = analyzer.get('ex_energy_density')
+    weights = analyzer.grids.weights
+    coords = analyzer.grids.coords
+    if isinstance(analyzer, UHFAnalyzer):
+        spinpol = True
+        values = np.stack([values[0], values[1]])
+        # NOTE not doing this factor of 2 thing anymore since
+        # training loop must be spin-aware to account for
+        # correlation functional
+        # rho_data = 2 * np.stack(rho_data[0], rho_data[1])
+        # weights *= 0.5
+    else:
+        values = values[np.newaxis, :]
+        desc = desc[np.newaxis, :]
+        spinpol = False
+
+    data = {
+        'rho': rho_data,
+        'desc': desc,
+        'val': values,
+        'coord': coords,
+        'wt': weights,
+        'nspin': 2 if spinpol else 1
+    }
+    if orbs is not None:
+        data['ddesc'] = ddesc
+        data['eigvals'] = eigvals
+        data['drho_data'] = drho_data
+    if save_baselines:
+        data['xc_orig'] = analyzer.get('xc_orig')
+        data['exc_orig'] = analyzer.get('exc_orig')
+        data['e_tot_orig'] = analyzer.get('e_tot_orig')
+    chkfile.dump(save_file, 'train_data', data)
+
+
+def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
+                    version='b', sparse_level=None, analysis_level=1,
+                    save_gap_data=False, save_baselines=True,
+                    make_fws=False, **gg_kwargs):
+    if version not in ['b', 'd', 'l']:
+        raise ValueError('Unsupported version for new dataset module')
+
+    if save_gap_data:
+        orbs = {'O': [0], 'U': [0]}
+    else:
+        orbs = None
+
+    if sparse_level is None:
+        level = analysis_level
+    else:
+        level = sparse_level
+    if isinstance(level, int):
+        sparse_tag = '_{}'.format(level)
+    else:
+        sparse_tag = '_{}_{}'.format(level[0], level[1])
+    save_dir = os.path.join(
+        SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
+        version+sparse_tag, DATASET_NAME,
+    )
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+
+    DATASET_NAME = os.path.basename(DATASET_NAME)
+    settings = {
+        'DATASET_NAME': DATASET_NAME,
+        'MOL_IDS': MOL_IDS,
+        'SAVE_ROOT': SAVE_ROOT,
+        'FUNCTIONAL': FUNCTIONAL,
+        'BASIS': BASIS,
+        'version': version,
+    }
+    settings.update(gg_kwargs)
+    with open(os.path.join(save_dir, DATASET_NAME, 'settings.yaml'), 'w') as f:
+        yaml.dump(settings, f)
+
+    for MOL_ID in MOL_IDS:
+        logging.info('Computing descriptors for {}'.format(MOL_ID))
+        data_dir = get_save_dir(SAVE_ROOT, 'KS', BASIS, MOL_ID, FUNCTIONAL)
+        save_file = os.path.join(save_dir, MOL_ID + '.hdf5')
+        analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
+        args = (save_file, analyzer_file, version,
+                sparse_level, orbs, save_baselines, gg_kwargs)
+        if make_fws:
+            raise NotImplementedError
+        else:
+            compile_single_system(*args)
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -186,7 +301,7 @@ def main():
     }
     if version in ['b', 'd', 'e']:
         gg_kwargs['vvmul'] = args.gg_vvmul
-    compile_dataset2(
+    compile_dataset(
         dataname, mol_ids, SAVE_ROOT, args.functional, args.basis, 
         spherical_atom=args.spherical_atom, version=version,
         analysis_level=args.analysis_level, sparse_level=sparse_level,

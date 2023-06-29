@@ -175,64 +175,8 @@ def main():
     exx_rxns = np.array(exx_rxns, dtype=np.float64)
     noise_list = np.array(noises, dtype=np.float64)
 
-    """
-    if args.solids_dir:
-        import ase.io.vasp
-        from ase.data import ground_state_magnetic_moments, chemical_symbols
-        def _load_formula(name):
-            #from orchard.workflow_utils import VCML_ROOT
-            VCML_ROOT = '/n/holystore01/LABS/kozinsky_lab/Lab/User/kbystrom/vcml_data'
-            if 'magmom' not in name:
-                name = name + '/volume_0'
-            rdir = os.path.join(VCML_ROOT, 'datasets/inout_vasp/SOL62/PBE/SOL62', name)
-            atoms = ase.io.vasp.read_vasp(os.path.join(rdir, 'POSCAR'))
-            nums = atoms.get_atomic_numbers()
-            return Counter(nums)
-        from collections import Counter
-        ddir = os.path.join(args.solids_dir, args.suffix)
-        dirs = next(os.walk(ddir))[1]
-        if args.solids_subset is not None:
-            with open(args.solids_subset, 'r') as f:
-                subset = [l.strip() for l in f.readlines()]
-                dirs = [d for d in dirs if d in subset]
-        print(dirs)
-        sol_dirs = [d for d in dirs if 'magmom' not in d]
-        atom_dirs = [d for d in dirs if 'magmom' in d]
-        sol_data = {}
-        sol_vw = []
-        sol_exx = []
-        for d in dirs:
-            print('STARTING', d)
-            sol_data[d] = list(get_covs(model, os.path.join(ddir, d), unit='eV'))
-            print(sol_data[d][0].shape, sol_data[d][1].shape)
-        for sol_d in sol_dirs:
-            formula = _load_formula(sol_d)
-            tot = 0
-            for Z, count in formula.items():
-                tot += count
-                magmom = ground_state_magnetic_moments[Z]
-                el = chemical_symbols[Z]
-                atom_id = '{}_magmom{}'.format(el, int(magmom))
-                sol_data[sol_d][0] -= count * sol_data[atom_id][0]
-                sol_data[sol_d][1] -= count * sol_data[atom_id][1]
-            sol_vw.append(sol_data[sol_d][0][:,0] / tot)
-            sol_exx.append(sol_data[sol_d][1][0] / tot)
-    """
-
     vwrtt_mat = vwrtt_rxns
     exx = exx_rxns
-    """
-    if args.solids_dir:
-        sol_exx = np.array(sol_exx)
-        sol_vw = np.array(sol_vw).T
-        print(exx.shape)
-        print(sol_exx.shape)
-        print(sol_vw.shape)
-        print(vwrtt_mat.shape)
-        exx = np.append(exx, sol_exx)
-        vwrtt_mat = np.append(vwrtt_mat, sol_vw, axis=-1)
-        noise_list = np.append(noise_list, 0.01 * np.ones(exx.size - noise_list.size))
-    """
 
     frac = 1.0
     version = 7
@@ -253,15 +197,6 @@ def main():
 
     dump(model, args.save_file)
 
-    """
-    for i in range(nd):
-        fname = args.datasets_list[i]
-        if args.suffix is not None:
-            fname = fname + '_' + args.suffix
-        fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
-                             args.basis, args.version, fname)
-        get_covs(model, fname)
-    """
 
 if __name__ == '__main__':
     main()
