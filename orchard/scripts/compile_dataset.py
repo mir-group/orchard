@@ -5,23 +5,20 @@ import os, time
 import numpy as np
 from ciderpress.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
-from ciderpress.density import get_exchange_descriptors2, LDA_FACTOR, GG_AMIN
+from ciderpress.density import get_exchange_descriptors, LDA_FACTOR, GG_AMIN
 from ciderpress.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
 from ciderpress.descriptors import get_descriptors
 import logging
 import yaml
-from ase.data import chemical_symbols, atomic_numbers, ground_state_magnetic_moments
-from collections import Counter
-
 from argparse import ArgumentParser
 
 """
 Script to compile a dataset from the CIDER DB for training a CIDER functional.
 """
 
-def compile_dataset2(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
-                     spherical_atom=False, version='a', sparse_level=None,
-                     analysis_level=1, **gg_kwargs):
+def compile_dataset_old(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
+                        spherical_atom=False, version='a', sparse_level=None,
+                        analysis_level=1, **gg_kwargs):
 
     all_descriptor_data = []
     all_rho_data = []
