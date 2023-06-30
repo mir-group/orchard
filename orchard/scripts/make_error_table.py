@@ -201,8 +201,13 @@ def error_table3u(dirs, Analyzer, models, rows, basis, functional):
 def get_single_file_xpred(fname_base, models, _get_fname):
     tmp = '//SUFFIX_TEMPLATE//'
     default = 'WIDE_WIDE'
-    fname = _get_fname(fname_base.replace(tmp, default))
-    exx = compute_x_pred(fname, 'EXX')
+    try:
+        fname = _get_fname(fname_base.replace(tmp, default))
+        exx = compute_x_pred(fname, 'EXX')
+    except:
+        default = 'WIDE'
+        fname = _get_fname(fname_base.replace(tmp, default))
+        exx = compute_x_pred(fname, 'EXX')
     diffs = []
     for model in models:
         if isinstance(model, str):
@@ -229,7 +234,7 @@ def error_table_rxn(mol_ids, fname_base, models, formulas=None, extra_dirs=None)
                     fname = cdd
                     break
             else:
-                raise FileNotFoundError('Could not find dataset in provided dirs')
+                raise FileNotFoundError('Could not find dataset in provided dirs: {}'.format(fname))
         return fname
     
     """
