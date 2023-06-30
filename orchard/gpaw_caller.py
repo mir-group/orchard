@@ -50,7 +50,10 @@ def setup_gpaw(settings_inp, calc=None):
         settings['mode'] = 'lcao'
         settings['eigensolver'] = None
     elif control['mode'] != 'fd':
-        settings['mode'] = PW(control['mode']) # mode = encut
+        if control.get('cellopt'):
+            settings['mode'] = PW(control['mode'], dedecut='estimate')
+        else:
+            settings['mode'] = PW(control['mode']) # mode = encut
         if settings.get('h') is None:
             # Default h should fit encut
             encut = control['mode']
@@ -105,6 +108,16 @@ def get_nscf_routine(settings_inp):
 def get_total_energy(atoms):
     return atoms.get_potential_energy()
 
+def get_cellopt(atoms, fmax=None):
+    from ase.optimize.bfgs import BFGS
+    from ase.constraints import UnitCellFilter
+    if fmax is None:
+        fmax = 0.0005
+    uf = UnitCellFilter(atoms)
+    relax = BFGS(uf)
+    relax.run(fmax=fmax)
+    return atoms.get_potential_energy()
+
 def get_nscf_energy_hybrid(atoms, settings, control):
     from gpaw.hybrids.energy import non_self_consistent_energy
     xcname = settings.pop('xc')
@@ -155,7 +168,10 @@ def call_gpaw():
         magmoms = settings['control'].get('magmom')
         if magmoms is not None:
             atoms.set_initial_magnetic_moments(magmoms)
-        routine = get_total_energy
+        if settings['control'].get('cellopt'):
+            routine = lambda x: get_cellopt(x, fmax=settings['control'].get('cellopt_fmax'))
+        else:
+            routine = get_total_energy
 
     try:
         e_tot = routine(atoms)
@@ -164,15 +180,17 @@ def call_gpaw():
         e_tot = float("NaN")
         converged = False
 
+    #with paropen('gpaw_outdata.tmp', 'w') as f:
+    #    f.write('e_tot : {}\n'.format(e_tot / Ha))
+    #    f.write('converged : {}\n'.format(converged))
     with paropen('gpaw_outdata.tmp', 'w') as f:
-        f.write('e_tot : {}\n'.format(e_tot / Ha))
-        f.write('converged : {}\n'.format(converged))
-        #txtfile = settings['calc'].get('txt')
-        #if txtfile is not None:
-        #    assert os.path.exists(txtfile)
-        #    f.write('logfile : {}\n'.format(os.path.abspath(txtfile)))
-        #else:
-        #    f.write('logfile : None\n')
+        d = {
+            'e_tot': e_tot / Ha,
+            'converged': converged,
+        }
+        if settings['control'].get('cellopt'):
+            d['struct'] = atoms.todict()
+        yaml.dump(d, f)
 
     if settings['control'].get('save_calc') is not None:
         assert settings['control']['save_calc'].endswith('.gpw')
