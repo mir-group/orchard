@@ -16,6 +16,7 @@ All PySCF settings supported:
         'radi_method': None or str (func name)
         'remove_linear_dep': bool,
         'mol_format': str
+        'cider_va': bool
     },
     'mol' : {
         'basis': str, default 'def2-qzvppd'
@@ -73,6 +74,37 @@ def setup_calc(atoms, settings):
     is_jax = settings.get('jax') is not None
     if (not is_cider) and (not is_jax):
         calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
+    elif is_cider and settings['control'].get('cider_va'):
+        from ciderpress.dft.numint import setup_rks_calc, setup_uks_calc
+        import joblib
+        mlfunc_filename = settings['cider']['mlfunc_filename']
+        spinpol = settings['control']['spinpol']
+        if spinpol:
+            setup_func = setup_uks_calc
+        else:
+            setup_func = setup_rks_calc
+        xmix = settings['cider']['xmix']
+        xkernel = settings['cider'].get('xkernel')
+        ckernel = settings['cider'].get('ckernel')
+        xc = settings['cider'].get('xc')
+        terms = []
+        if xc is not None:
+            terms.append(xc)
+        if xkernel is not None:
+            terms.append('{}*{}'.format(1-xmix, xkernel))
+        if ckernel is not None:
+            terms.append(ckernel)
+        if terms == []:
+            xc = None
+        else:
+            xc = ''
+            for t in terms:
+                xc = xc + t
+        calc = setup_uks_calc(
+            mol, joblib.load(mlfunc_filename),
+            xmix=xmix, xc=xc,
+
+        )
     elif is_cider and (not is_jax):
         # TODO grid level settings
         from ciderpress.dft.ri_cider import setup_cider_calc

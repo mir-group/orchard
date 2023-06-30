@@ -279,7 +279,7 @@ def main():
     args = parser.parse_args()
 
     version = args.version.lower()
-    if version not in ['a', 'b', 'c', 'd', 'e']:
+    if version not in ['a', 'b', 'c', 'd', 'e', 'f']:
         raise ValueError('Unsupported descriptor set')
 
     mol_ids = load_mol_ids(args.mol_id_file)

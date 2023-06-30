@@ -106,10 +106,11 @@ def call_gpaw(cmd, logfile, require_converged=True):
             successful = False#raise RuntimeError('GPAW calculation did not converge!')
         else:
             successful = True
-        update_spec = {
-            'e_tot': results['e_tot'],
-            'converged': results['converged'],
-        }
+        #update_spec = {
+        #    'e_tot': results['e_tot'],
+        #    'converged': results['converged'],
+        #}
+        update_spec = results
     return successful, update_spec, stop_time - start_time, logfile
 
 
@@ -134,6 +135,7 @@ class GPAWSinglePointSCF(FiretaskBase):
         successful, update_spec, wall_time, logfile = call_gpaw(
             cmd, logfile, require_converged=self['require_converged']
         )
+        struct = update_spec.get('struct') or self['struct']
 
         update_spec.update({
             'successful': successful,
@@ -142,7 +144,7 @@ class GPAWSinglePointSCF(FiretaskBase):
             'method_description': self.get('method_description'),
             'save_file' : save_file,
             'settings' : settings,
-            'struct': self['struct'],
+            'struct': struct,
             'system_id' : self['system_id'],
             'wall_time' : wall_time,
         })
@@ -171,6 +173,7 @@ class GPAWSinglePointRestart(FiretaskBase):
 
         logfile = settings['calc'].get('txt') or 'calc.txt'
         successful, update_spec, wall_time, logfile = call_gpaw(cmd, logfile)
+        struct = update_spec.get('struct') or struct
 
         update_spec.update({
             'successful': successful,
