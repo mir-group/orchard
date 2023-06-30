@@ -1,15 +1,11 @@
 from argparse import ArgumentParser
 import os
 import numpy as np
-from joblib import dump, load
+from joblib import dump
 from orchard.workflow_utils import SAVE_ROOT, load_rxns
-from ciderpress.models.gp import *
 from ciderpress.models.train import DescParams, MOLGP
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.baselines import BASELINES
-from ciderpress.models.compute_mol_cov import compute_tr_covs, compute_tr_covs_ex, \
-                                            compute_heg_covs, compute_new_alpha, \
-                                            reduce_model_size_
 from ciderpress.xcutil.transform_data import FeatureList
 from pyscf.lib import chkfile
 import importlib

@@ -228,6 +228,10 @@ def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
     with open(os.path.join(save_dir, DATASET_NAME, 'settings.yaml'), 'w') as f:
         yaml.dump(settings, f)
 
+    if make_fws:
+        from orchard.pyscf_tasks import StoreFeatures
+        fwlist = {}
+
     for MOL_ID in MOL_IDS:
         logging.info('Computing descriptors for {}'.format(MOL_ID))
         data_dir = get_save_dir(SAVE_ROOT, 'KS', BASIS, MOL_ID, FUNCTIONAL)
@@ -236,9 +240,13 @@ def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
         args = (save_file, analyzer_file, version,
                 sparse_level, orbs, save_baselines, gg_kwargs)
         if make_fws:
-            raise NotImplementedError
+            fwname = 'feature_{}_{}'.format(version, MOL_ID)
+            fwlist[fwname] = StoreFeatures(args=args)
         else:
             compile_single_system(*args)
+
+    if make_fws:
+        return fwlist
 
 
 def main():
@@ -267,6 +275,7 @@ def main():
                         help='Level of analysis to search for each system, looks for analysis_L{analysis-level}.hdf5')
     parser.add_argument('--sparse-grid', default=None, type=int, nargs='+',
                         help='use a sparse grid to compute features, etc. If set, recomputes data.')
+    parser.add_argument('--make-fws', action='store_true')
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -301,12 +310,20 @@ def main():
     }
     if version in ['b', 'd', 'e']:
         gg_kwargs['vvmul'] = args.gg_vvmul
-    compile_dataset(
+    res = compile_dataset(
         dataname, mol_ids, SAVE_ROOT, args.functional, args.basis, 
         spherical_atom=args.spherical_atom, version=version,
         analysis_level=args.analysis_level, sparse_level=sparse_level,
+        make_fws=args.make_fws,
         **gg_kwargs
     )
+    if args.make_fws:
+        from fireworks import LaunchPad, Firework
+        launchpad = LaunchPad.auto_load()
+        for fw in res:
+            fw = Firework([res[fw]], name=fw)
+            print(fw.name)
+            launchpad.add_wf(fw)
 
 if __name__ == '__main__':
     main()
