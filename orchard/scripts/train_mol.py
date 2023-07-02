@@ -5,7 +5,7 @@ from joblib import dump
 from orchard.workflow_utils import SAVE_ROOT, load_rxns
 from ciderpress.models.train import DescParams, MOLGP
 from ciderpress.models.dft_kernel import DFTKernel
-from ciderpress.models.baselines import BASELINES
+from ciderpress.models.baselines import BASELINE_CODES
 from ciderpress.xcutil.transform_data import FeatureList
 from pyscf.lib import chkfile
 import importlib
@@ -13,26 +13,29 @@ import yaml
 
 
 def find_dataset(fname, args):
+    fname = '{}_settings.yaml'.format(fname)
+    reldir = os.path.join(
+        'DATASETS', args.functional, args.basis,
+        args.version, args.suffix, fname
+    )
     if args.extra_dirs is None:
-        fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
-                             args.basis, args.version, fname)
+        fname = os.path.join(SAVE_ROOT, reldir)
     else:
         ddirs = [SAVE_ROOT] + args.extra_dirs
         for dd in ddirs:
-            cdd = os.path.join(dd, 'DATASETS', args.functional,
-                               args.basis, args.version, fname)
+            cdd = os.path.join(dd, 'DATASETS', reldir)
             print(cdd)
             if os.path.exists(cdd):
                 fname = cdd
                 break
         else:
             raise FileNotFoundError('Could not find dataset in provided dirs')
-    return fname
+    return os.path.dirname(fname)
 
 
 def get_plan_module(plan_file):
     if plan_file.startswith('@'):
-        plan_module = __import__(plan_file[1:], globals(), locals())
+        plan_module = importlib.import_module(plan_file[1:])
     else:
         assert os.path.exists(plan_file)
         spec = importlib.util.spec_from_file_location('plan_module')
@@ -43,32 +46,30 @@ def get_plan_module(plan_file):
 
 def parse_settings(args):
     fname = args.datasets_list[0]
-    if args.suffix is not None:
-        fname = fname + '_' + args.suffix
-    fname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
-                         args.basis, args.version, fname)
+    dname = os.path.join(SAVE_ROOT, 'DATASETS', args.functional,
+                         args.basis, args.version, args.suffix)
     print(fname)
-    with open(os.path.join(fname, 'settings.yaml'), 'r') as f:
+    with open(os.path.join(dname,
+              '{}_settings.yaml'.format(fname)), 'r') as f:
         d = yaml.load(f, Loader=yaml.Loader)
     args.gg_a0 = d.get('a0')
     args.gg_amin = d.get('amin')
     args.gg_facmul = d.get('fac_mul')
+    args.gg_vvmul = d.get('vvmul')
 
 
 def parse_dataset_for_ctrl(args, i):
     fname = args.datasets_list[2*i]
     n = int(args.datasets_list[2*i+1])
-    if args.suffix is not None:
-        fname = fname + '_' + args.suffix
     dirname = find_dataset(fname, args)
-    with open(os.path.join(dirname, 'settings.yaml'), 'r') as f:
+    with open(os.path.join(dirname, '{}_settings.yaml'.format(fname)), 'r') as f:
         settings = yaml.load(f, Loader=yaml.CLoader)
         mol_ids = settings['MOL_IDS']
     Xlist = []
     ylist = []
     for mol_id in mol_ids:
         fname = os.path.join(dirname, mol_id + '.hdf5')
-        data = chkfile.load(fname, 'data')
+        data = chkfile.load(fname, 'train_data')
         cond = data['desc'][:, 0, :].sum(0) > args.density_cutoff
         X = data['desc'][:, :, cond]
         y = data['val'][:, cond]
@@ -78,7 +79,7 @@ def parse_dataset_for_ctrl(args, i):
             X = X[..., inds]
             y = y[..., inds]
         Xlist.append(X[..., ::n])
-        ylist.append(y[..., ::n])
+        ylist.append(y[..., ::n].flatten())
     return Xlist, ylist, args.datasets_list[2*i], mol_ids
 
 
@@ -95,14 +96,14 @@ def main():
                         help='file to which to save new GP')
     parser.add_argument('basis', metavar='basis', type=str,
                         help='basis set code')
-    parser.add_argument('--kernel-plan-file', type=str, nargs='+',
+    parser.add_argument('--kernel-plan-file', type=str,
                         help='Settings file for list of kernels. See '
                         'ciderpress.models.kernel_plans.settings_example.yaml '
                         'for documentation and format.')
     parser.add_argument('--datasets-list', nargs='+',
                         help='Pairs of dataset names and inverse sampling '
                              'densities')
-    parser.add_argumetn('--load-orbs-list', nargs='+', type=int,
+    parser.add_argument('--load-orbs-list', nargs='+',
                         help='Pairs of dataset names and 0 (no) or 1 (yes) for '
                              'whether to load orbital occupation gradients. '
                              'Default is 1 if orbs are in the dataset, else 0. '
@@ -145,23 +146,24 @@ def main():
     parser.add_argument('--min-lscale', type=float, default=None,
                         help='Minimum length-scale for GP kernel')
     parser.add_argument('--libxc-baseline', type=str, default=None,
-                        helper='Baseline libxc functional for the full model')
+                        help='Baseline libxc functional for the full model')
     parser.add_argument('--mapped-fname', type=str, default=None,
-                        helper='If not None, map model and same to this file.')
+                        help='If not None, map model and same to this file.')
+    parser.add_argument('--randomize', action='store_true')
     args = parser.parse_args()
     parse_settings(args)
 
-    assert len(args.dataset_list) % 2 == 0
+    assert len(args.datasets_list) % 2 == 0
     assert len(args.load_orbs_list) % 2 == 0
     assert len(args.reactions_list) % 2 == 0
 
     np.random.seed(args.seed)
-    datasets_list = args.data_sets_list[::2]
+    datasets_list = args.datasets_list[::2]
     load_orbs_dict = {k : None for k in datasets_list}
     for i, dset in enumerate(args.load_orbs_list[::2]):
         if dset not in load_orbs_dict.keys():
             raise ValueError
-        load_orbs_dict[dset] = args.load_orbs_list[2 * i + 1]
+        load_orbs_dict[dset] = int(args.load_orbs_list[2 * i + 1])
     nd = len(datasets_list)
     assert nd > 0
 
@@ -182,7 +184,7 @@ def main():
     for i in range(nd):
         Xlist_tmp, y_tmp, dset_name, dset_ids = parse_dataset_for_ctrl(args, i)
         Xlist += Xlist_tmp
-        ylist.append(y_tmp.flatten())
+        ylist.append(y_tmp)
         molid_map[dset_name] = dset_ids
     yctrl = np.concatenate(ylist, axis=0)
 
@@ -201,8 +203,8 @@ def main():
             desc_params,
             feature_list,
             plan['mode'],
-            BASELINES[plan['multiplicative_baseline']],
-            additive_baseline=BASELINES.get(plan['additive_baseline']),
+            BASELINE_CODES[plan['multiplicative_baseline']],
+            additive_baseline=BASELINE_CODES.get(plan['additive_baseline']),
             ctrl_tol=ctrl_tol,
             ctrl_nmax=ctrl_nmax,
         ))
@@ -215,7 +217,7 @@ def main():
         )
         kernels[-1].set_kernel(kernel)
         if 'mapping_plan' in dir(plan_module):
-            mfunc = plan_module.mapping_plane
+            mfunc = plan_module.mapping_plan
         else:
             mfunc = None
         mapping_plans.append(mfunc)
@@ -232,7 +234,7 @@ def main():
 
     rxn_list = []
     for i, rxn_id in enumerate(args.reactions_list[::2]):
-        mode = args.reaction_list[2 * i + 1]
+        mode = int(args.reactions_list[2 * i + 1])
         rxn_dict = load_rxns(rxn_id)
         for v in list(rxn_dict.values()):
             rxn_list.append((mode, v))
@@ -241,8 +243,6 @@ def main():
         fname = datasets_list[2 * i]
         load_orbs = load_orbs_dict[fname]
         mol_ids = molid_map[fname]
-        if args.suffix is not None:
-            fname = fname + '_' + args.suffix
         fname = find_dataset(fname, args)
         gpr.store_mol_covs(fname, mol_ids, get_orb_deriv=load_orbs,
                            get_correlation=True)
@@ -260,6 +260,8 @@ def main():
 
     gpr.add_reactions(rxn_list)
     gpr.args = args
+
+    gpr.fit()
 
     dump(gpr, args.save_file)
 

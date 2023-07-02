@@ -130,8 +130,16 @@ def compile_single_system(save_file, analyzer_file, version,
     start = time.monotonic()
     analyzer = ElectronAnalyzer.load(analyzer_file)
     if sparse_level is not None:
+        old_analyzer = analyzer
         Analyzer = UHFAnalyzer if analyzer.atype == 'UHF' else RHFAnalyzer
-        analyzer = Analyzer(analyzer.mol, analyzer.dm, grids_level=sparse_level)
+        analyzer = Analyzer(analyzer.mol, analyzer.dm, grids_level=sparse_level,
+                            mo_occ=old_analyzer.mo_occ,
+                            mo_coeff=old_analyzer.mo_coeff,
+                            mo_energy=old_analyzer.mo_energy)
+        if 'e_tot_orig' in old_analyzer._data:
+            analyzer._data['xc_orig'] = old_analyzer.get('xc_orig')
+            analyzer._data['exc_orig'] = old_analyzer.get('exc_orig')
+            analyzer._data['e_tot_orig'] = old_analyzer.get('e_tot_orig')
         analyzer.perform_full_analysis()
     else:
         analyzer.get_rho_data()
@@ -175,17 +183,29 @@ def compile_single_system(save_file, analyzer_file, version,
         'nspin': 2 if spinpol else 1
     }
     if orbs is not None:
-        data['ddesc'] = ddesc
-        data['eigvals'] = eigvals
-        data['drho_data'] = drho_data
+        data['ddesc'] = intk_to_strk(ddesc)
+        data['eigvals'] = intk_to_strk(eigvals)
+        data['drho_data'] = intk_to_strk(drho_data)
     if save_baselines:
         data['xc_orig'] = analyzer.get('xc_orig')
         data['exc_orig'] = analyzer.get('exc_orig')
         data['e_tot_orig'] = analyzer.get('e_tot_orig')
+    basedir = os.path.basename(save_file)
+    if not os.path.exists(basedir):
+        os.makedirs(basedir)
     chkfile.dump(save_file, 'train_data', data)
 
 
-def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
+def intk_to_strk(d):
+    if not isinstance(d, dict):
+        return d
+    nd = {}
+    for k, v in d.items():
+        nd[str(k)] = intk_to_strk(v)
+    return nd
+
+
+def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
                     version='b', sparse_level=None, analysis_level=1,
                     save_gap_data=False, save_baselines=True,
                     make_fws=False, **gg_kwargs):
@@ -205,16 +225,16 @@ def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
         sparse_tag = '_{}'.format(level)
     else:
         sparse_tag = '_{}_{}'.format(level[0], level[1])
+
     save_dir = os.path.join(
         SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
-        version+sparse_tag, DATASET_NAME,
-    )
+        version+sparse_tag, DESC_NAME,
+    ) 
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
-
-    DATASET_NAME = os.path.basename(DATASET_NAME)
     settings = {
         'DATASET_NAME': DATASET_NAME,
+        'DESC_NAME': DESC_NAME,
         'MOL_IDS': MOL_IDS,
         'SAVE_ROOT': SAVE_ROOT,
         'FUNCTIONAL': FUNCTIONAL,
@@ -222,7 +242,11 @@ def compile_dataset(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
         'version': version,
     }
     settings.update(gg_kwargs)
-    with open(os.path.join(save_dir, DATASET_NAME, 'settings.yaml'), 'w') as f:
+    print(save_dir, SAVE_ROOT, DESC_NAME)
+    print(os.path.join(save_dir,
+             '{}_settings.yaml'.format(DATASET_NAME)))
+    with open(os.path.join(save_dir,
+             '{}_settings.yaml'.format(DATASET_NAME)), 'w') as f:
         yaml.dump(settings, f)
 
     if make_fws:
@@ -273,6 +297,7 @@ def main():
     parser.add_argument('--sparse-grid', default=None, type=int, nargs='+',
                         help='use a sparse grid to compute features, etc. If set, recomputes data.')
     parser.add_argument('--make-fws', action='store_true')
+    parser.add_argument('--save-gap-data', action='store_true')
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -308,10 +333,13 @@ def main():
     if version in ['b', 'd', 'e']:
         gg_kwargs['vvmul'] = args.gg_vvmul
     res = compile_dataset(
-        dataname, mol_ids, SAVE_ROOT, args.functional, args.basis, 
-        spherical_atom=args.spherical_atom, version=version,
+        '_UNNAMED' if args.suffix is None else args.suffix,
+        mol_id_code.upper().split('/')[-1], mol_ids, SAVE_ROOT,
+        args.functional, args.basis, 
+        #spherical_atom=args.spherical_atom,
+        version=version,
         analysis_level=args.analysis_level, sparse_level=sparse_level,
-        make_fws=args.make_fws,
+        save_gap_data=args.save_gap_data, make_fws=args.make_fws,
         **gg_kwargs
     )
     if args.make_fws:

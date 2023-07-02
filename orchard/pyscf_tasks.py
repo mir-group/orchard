@@ -231,7 +231,7 @@ class StoreFeatures(FiretaskBase):
 
     def run_task(self, fw_spec):
         from orchard.scripts.compile_dataset import compile_single_system
-        args = fw_spec['args']
+        args = self['args']
         compile_single_system(*args)
 
 
