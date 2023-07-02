@@ -211,7 +211,7 @@ def main():
         X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
         kernel = plan_module.get_kernel(
             natural_scale=np.var(yctrl),
-            natural_lscale=np.var(X1, axis=0),
+            natural_lscale=np.std(X1, axis=0),
             scale_factor=args.scale_mul,
             lscale_factor=args.length_scale_mul,
         )
