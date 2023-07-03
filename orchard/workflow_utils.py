@@ -38,6 +38,13 @@ def load_mol_ids(mol_id_file):
                             for sysid in contents['mols']]
     return contents['mols']
 
+def _append_prefix(prefix, sysid):
+    if isinstance(sysid, tuple):
+        assert isinstance(sysid[0], str)
+        return (os.path.join(prefix, sysid[0]), sysid[1])
+    assert isinstance(sysid, str)
+    return os.path.join(prefix, sysid)
+
 def load_rxns(rxn_list_id, rxndir=None):
     if rxndir is None:
         rxndir = RXN_ROOT
@@ -49,7 +56,7 @@ def load_rxns(rxn_list_id, rxndir=None):
     if contents.get('prefix') is not None:
         prefix = contents.pop('prefix')
         for k, v in contents.items():
-            contents[k]['structs'] = [os.path.join(prefix, sysid) \
+            contents[k]['structs'] = [_append_prefix(prefix, sysid) \
                                       for sysid in contents[k]['structs']]
     return contents
         

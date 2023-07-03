@@ -1,15 +1,28 @@
 from argparse import ArgumentParser
 import os
 import numpy as np
-from joblib import dump
+from joblib import load, dump
 from orchard.workflow_utils import SAVE_ROOT, load_rxns
 from ciderpress.models.train import DescParams, MOLGP
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.baselines import BASELINE_CODES
 from ciderpress.xcutil.transform_data import FeatureList
+from ciderpress.density import LDA_FACTOR
 from pyscf.lib import chkfile
 import importlib
 import yaml
+
+import traceback
+import warnings
+import sys
+
+def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
+
+    log = file if hasattr(file,'write') else sys.stderr
+    traceback.print_stack(file=log)
+    log.write(warnings.formatwarning(message, category, filename, lineno, line))
+
+warnings.showwarning = warn_with_traceback
 
 
 def find_dataset(fname, args):
@@ -70,16 +83,17 @@ def parse_dataset_for_ctrl(args, i):
     for mol_id in mol_ids:
         fname = os.path.join(dirname, mol_id + '.hdf5')
         data = chkfile.load(fname, 'train_data')
-        cond = data['desc'][:, 0, :].sum(0) > args.density_cutoff
+        cond = data['desc'][:, 0, :] > args.density_cutoff
+        y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3))
+        cond = np.all(cond, axis=0)
         X = data['desc'][:, :, cond]
-        y = data['val'][:, cond]
+        exlda = LDA_FACTOR * data['desc'][:, 0, cond]**(4.0 / 3)
         if args.randomize:
-            inds = np.arange(X.shape[0])
+            inds = np.arange(X.shape[-1])
             np.random.shuffle(inds)
             X = X[..., inds]
-            y = y[..., inds]
         Xlist.append(X[..., ::n])
-        ylist.append(y[..., ::n].flatten())
+        ylist.append(y[::n])
     return Xlist, ylist, args.datasets_list[2*i], mol_ids
 
 
@@ -150,8 +164,16 @@ def main():
     parser.add_argument('--mapped-fname', type=str, default=None,
                         help='If not None, map model and same to this file.')
     parser.add_argument('--randomize', action='store_true')
+    parser.add_argument('--debug-model', type=str, default=None,
+                        help='Load joblib and print debug')
+    parser.add_argument('--debug-spline', type=str, default=None,
+                        help='Load joblib and print debug')
     args = parser.parse_args()
     parse_settings(args)
+    if args.debug_model is not None:
+        args.debug_model = load(args.debug_model)
+    if args.debug_spline is not None:
+        args.debug_spline = load(args.debug_spline)
 
     assert len(args.datasets_list) % 2 == 0
     assert len(args.load_orbs_list) % 2 == 0
@@ -184,7 +206,7 @@ def main():
     for i in range(nd):
         Xlist_tmp, y_tmp, dset_name, dset_ids = parse_dataset_for_ctrl(args, i)
         Xlist += Xlist_tmp
-        ylist.append(y_tmp)
+        ylist += y_tmp
         molid_map[dset_name] = dset_ids
     yctrl = np.concatenate(ylist, axis=0)
 
@@ -209,6 +231,7 @@ def main():
             ctrl_nmax=ctrl_nmax,
         ))
         X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
+        print('SHAPES', X1.shape, yctrl.shape)
         kernel = plan_module.get_kernel(
             natural_scale=np.var(yctrl),
             natural_lscale=np.std(X1, axis=0),
@@ -228,6 +251,7 @@ def main():
         libxc_baseline=args.libxc_baseline,
         default_noise=args.mol_sigma,
     )
+    gpr.args = args
 
     # Set the control points in the model
     gpr.set_control_points(Xlist, reduce=True)
@@ -240,7 +264,7 @@ def main():
             rxn_list.append((mode, v))
 
     for i in range(nd):
-        fname = datasets_list[2 * i]
+        fname = datasets_list[i]
         load_orbs = load_orbs_dict[fname]
         mol_ids = molid_map[fname]
         fname = find_dataset(fname, args)
@@ -259,7 +283,6 @@ def main():
     #    ))
 
     gpr.add_reactions(rxn_list)
-    gpr.args = args
 
     gpr.fit()
 

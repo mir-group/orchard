@@ -183,6 +183,7 @@ def compile_single_system(save_file, analyzer_file, version,
         'nspin': 2 if spinpol else 1
     }
     if orbs is not None:
+        data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
         data['ddesc'] = intk_to_strk(ddesc)
         data['eigvals'] = intk_to_strk(eigvals)
         data['drho_data'] = intk_to_strk(drho_data)
