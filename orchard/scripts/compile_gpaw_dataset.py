@@ -78,6 +78,8 @@ def compile_exx_dataset(
         data_dir = os.path.join(SAVE_ROOT, 'PW-KS', FUNCTIONAL, MOL_ID)
         calc_settings = {
             'task': 'EXX',
+            'kpts': {'density': 4.5, 'even': True, 'gamma': True},
+            'encut': 520,
             'data_dir': data_dir,
             'save_gap_data': save_gap_data,
             'save_baselines': save_baselines,

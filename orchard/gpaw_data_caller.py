@@ -2,12 +2,12 @@ import yaml
 import os
 import sys
 import numpy as np
-from gpaw import restart
+from gpaw import restart, PW
 from ase.parallel import paropen
 from pyscf.lib import chkfile
 
 
-def get_exx(data_dir, calc, p_be=None):
+def get_exx(data_dir, calc, encut, kpts, p_be=None):
     """
 
     :param save_dir:
@@ -16,6 +16,8 @@ def get_exx(data_dir, calc, p_be=None):
     :return:
     """
     from gpaw.hybrids.energy import non_self_consistent_energy
+    calc.set(mode=PW(encut), kpts=kpts)
+    calc.get_potential_energy()
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
     data['e_tot_orig'] = eterms[0]
@@ -98,7 +100,7 @@ def call_gpaw():
         p_be = None
 
     if task == 'EXX':
-        get_exx(data_dir, calc, p_be=p_be)
+        get_exx(data_dir, calc, settings['encut'], settings['kpts'], p_be=p_be)
     elif task == 'FEAT':
         save_features(settings['save_file'], data_dir, calc,
                       settings['version'], settings['gg_kwargs'],
