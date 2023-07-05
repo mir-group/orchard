@@ -20,11 +20,16 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
     if kpts is not None:
         calc.set(kpts = kpts)
     calc.get_potential_energy()
+    solver = calc.parameters.eigensolver
+    if solver is None:
+        pass
+    elif not isinstance(solver, str) or solver.lower() == 'cg':
+        calc.set(parallel={'domain': 1, 'band': 1})
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
     data['e_tot_orig'] = eterms[0]
     data['exc_orig'] = eterms[1]
-    data['xc_orig'] = calc.xc.name
+    data['xc_orig'] = calc.hamiltonian.xc.name
     data['exx'] = eterms[3:].sum()
     if p_be is not None:
         from gpaw.hybrids.eigenvalues import non_self_consistent_eigenvalues as nsceigs
