@@ -108,6 +108,7 @@ def main():
     parser.add_argument('--suffix', default=None, type=str,
                         help='customize data directories with this suffix')
     parser.add_argument('--save-gap-data', action='store_true')
+    parser.add_argument('--exx-only', action='store_true')
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -126,16 +127,24 @@ def main():
     }
     if version in ['b', 'd']:
         gg_kwargs['vvmul'] = args.gg_vvmul
-    res = compile_dataset(
-        '_UNNAMED' if args.suffix is None else args.suffix,
-        mol_id_code.upper().split('/')[-1],
-        mol_ids,
-        SAVE_ROOT,
-        args.functional,
-        gg_kwargs,
-        version=version,
-        save_gap_data=args.save_gap_data,
-    )
+    if args.exx_only:
+        res = compile_exx_dataset(
+            mol_ids,
+            SAVE_ROOT,
+            args.functional,
+            save_gap_data=args.save_gap_data,
+        )
+    else:
+        res = compile_dataset(
+            '_UNNAMED' if args.suffix is None else args.suffix,
+            mol_id_code.upper().split('/')[-1],
+            mol_ids,
+            SAVE_ROOT,
+            args.functional,
+            gg_kwargs,
+            version=version,
+            save_gap_data=args.save_gap_data,
+        )
     from fireworks import LaunchPad, Firework
     launchpad = LaunchPad.auto_load()
     for fw in res:
