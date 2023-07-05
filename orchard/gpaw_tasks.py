@@ -256,11 +256,14 @@ class StoreFeatures(FiretaskBase):
             settings_path=settings_path,
         )
 
-        start_time = time.monotonic()
-        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
-        proc.wait()
-        stop_time = time.monotonic()
-        print('Script runtime is {} s'.format(stop_time - start_time))
+        logfile = os.path.abspath('calc.txt')
+        with open(logfile, 'w') as f:
+            print('LOGFILE', logfile)
+            start_time = time.monotonic()
+            proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
+            proc.wait()
+            stop_time = time.monotonic()
+            print('Script runtime is {} s'.format(stop_time - start_time))
 
 
 def make_etot_firework(
