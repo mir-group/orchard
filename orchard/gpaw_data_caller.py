@@ -8,7 +8,8 @@ from pyscf.lib import chkfile
 from ase.units import Ha
 
 
-def get_exx(data_dir, calc, kpts, p_be=None):
+def get_exx(data_dir, calc, kpts,
+            save_gap_data=False):
     """
     :param save_dir:
     :param calc:
@@ -18,12 +19,18 @@ def get_exx(data_dir, calc, kpts, p_be=None):
     from gpaw.hybrids.energy import non_self_consistent_energy
     if kpts is not None:
         calc.set(kpts=kpts)
-    calc.get_potential_energy()
     solver = calc.parameters.eigensolver
     if solver is None:
         pass
     elif not isinstance(solver, str) or solver.lower() == 'cg':
         calc.set(parallel={'domain': 1, 'band': 1})
+    calc.get_potential_energy()
+    if save_gap_data:
+        from ase.dft.bandgap import bandgap
+        gap, p_vbm, p_cbm = bandgap(calc)
+        p_be = (p_vbm, p_cbm)
+    else:
+        p_be = None
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
     data['kpts'] = calc.parameters.kpts
@@ -46,6 +53,7 @@ def get_exx(data_dir, calc, kpts, p_be=None):
         data['eigvals'] = eig_dft_dict
         data['vxc_dft'] = vxc_dft_dict
         data['dval'] = vxc_hyb_dict
+        data['p_be'] = p_be
     with paropen(os.path.join(data_dir, 'exx_data.yaml'), 'w') as f:
         yaml.dump(data, f, Dumper=yaml.CDumper)
 
@@ -61,12 +69,19 @@ def arr_to_strk(arr, nspin, p_be):
     }
 
 
-def save_features(save_file, data_dir, calc, version, gg_kwargs, p_be=None):
+def save_features(save_file, data_dir, calc, version, gg_kwargs,
+                  save_gap_data=False):
     from ciderpress.gpaw.analysis import get_features
-    res = get_features(calc, p_i=p_be, version=version, **gg_kwargs)
-    rho_res = get_features(calc, p_i=p_be, version='l')
+
     with open(os.path.join(data_dir, 'exx_data.yaml'), 'r') as f:
         data = yaml.load(f, Loader=yaml.CLoader)
+    if save_gap_data:
+        p_be = data['p_be']
+    else:
+        p_be = None
+
+    res = get_features(calc, p_i=p_be, version=version, **gg_kwargs)
+    rho_res = get_features(calc, p_i=p_be, version='l')
     if p_be is None:
         feat_sig, all_wt = res
         rho_sig, _ = rho_res
@@ -98,18 +113,13 @@ def call_gpaw():
     data_dir = settings['data_dir']
     task = settings['task'] # should be EXX or FEAT
     atoms, calc = restart(os.path.join(data_dir, 'calc.gpw'), txt='-')
-    if settings.get('save_gap_data'):
-        from ase.dft.bandgap import bandgap
-        gap, p_vbm, p_cbm = bandgap(calc)
-        p_be = (p_vbm, p_cbm)
-    else:
-        p_be = None
     if task == 'EXX':
-        get_exx(data_dir, calc, settings['kpts'], p_be=p_be)
+        get_exx(data_dir, calc, settings['kpts'],
+                save_gap_data=settings.get('save_gap_data'))
     elif task == 'FEAT':
         save_features(settings['save_file'], data_dir, calc,
                       settings['version'], settings['gg_kwargs'],
-                      p_be=p_be)
+                      save_gap_data=settings.get('save_gap_data'))
 
 
 if __name__ == '__main__':
