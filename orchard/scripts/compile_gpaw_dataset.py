@@ -68,6 +68,7 @@ def compile_exx_dataset(
         MOL_IDS,
         SAVE_ROOT,
         FUNCTIONAL,
+        kpt_density,
         save_gap_data=False,
         save_baselines=True,
 ):
@@ -77,7 +78,7 @@ def compile_exx_dataset(
         logging.info('Computing exx for {}'.format(MOL_ID))
         data_dir = os.path.join(SAVE_ROOT, 'PW-KS', FUNCTIONAL, MOL_ID)
         new_kpts = None if 'magmom' in MOL_ID else \
-            {'density': 4.5, 'even': True, 'gamma': True}
+            {'density': kpt_density, 'even': True, 'gamma': True}
         calc_settings = {
             'task': 'EXX',
             'kpts': new_kpts,
@@ -113,6 +114,7 @@ def main():
                         help='customize data directories with this suffix')
     parser.add_argument('--save-gap-data', action='store_true')
     parser.add_argument('--exx-only', action='store_true')
+    parser.add_argument('--kpt-density', default=4.5, type=float)
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -136,6 +138,7 @@ def main():
             mol_ids,
             SAVE_ROOT,
             args.functional,
+            kpt_density=args.kpt_density,
             save_gap_data=args.save_gap_data,
         )
     else:
