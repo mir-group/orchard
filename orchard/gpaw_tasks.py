@@ -246,9 +246,9 @@ class StoreFeatures(FiretaskBase):
         else:
             nproc = os.environ['NPROC_GPAW']
         if nproc == 1:
-            cmd = 'python {call_script} {settings_path}'
+            cmd = 'python -u {call_script} {settings_path}'
         else:
-            cmd = 'mpirun -np {nproc} python {call_script} {settings_path}'
+            cmd = 'mpirun -np {nproc} python -u {call_script} {settings_path}'
 
         print('NPROC', nproc)
 
@@ -262,14 +262,23 @@ class StoreFeatures(FiretaskBase):
         )
 
         logfile = os.path.abspath('calc.txt')
-        with open(logfile, 'w') as f:
-            print('LOGFILE', logfile)
-            start_time = time.monotonic()
-            proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
-            return_code = proc.wait()
-            assert return_code == 0
-            stop_time = time.monotonic()
-            print('Script runtime is {} s'.format(stop_time - start_time))
+        #with open(logfile, 'w') as f:
+        #    print('LOGFILE', logfile)
+        #    start_time = time.monotonic()
+        #    #proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
+        #    proc = subprocess.Popen(shlex.split(cmd), shell=False, capture_output=True)
+        #    return_code = proc.wait()
+        #    assert return_code == 0
+        #    stop_time = time.monotonic()
+        #    print('Script runtime is {} s'.format(stop_time - start_time))
+
+        print('LOGFILE', logfile)
+        start_time = time.monotonic()
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=sys.stdout, stderr=sys.stderr)
+        return_code = proc.wait()
+        assert return_code == 0
+        stop_time = time.monotonic()
+        print('Script runtime is {} s'.format(stop_time - start_time))
 
 
 def make_etot_firework(

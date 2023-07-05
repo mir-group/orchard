@@ -78,7 +78,7 @@ def compile_exx_dataset(
         logging.info('Computing exx for {}'.format(MOL_ID))
         data_dir = os.path.join(SAVE_ROOT, 'PW-KS', FUNCTIONAL, MOL_ID)
         new_kpts = None if 'magmom' in MOL_ID else \
-                   {'density': 4.5, 'even': True, 'gamma': True}
+                   {'density': kpt_density, 'even': True, 'gamma': True}
         nproc = 1 if 'magmom' in MOL_ID else None
         calc_settings = {
             'task': 'EXX',

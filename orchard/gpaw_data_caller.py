@@ -8,16 +8,14 @@ from pyscf.lib import chkfile
 from ase.units import Ha
 
 
-def get_exx(data_dir, calc, encut, kpts, p_be=None):
+def get_exx(data_dir, calc, kpts, p_be=None):
     """
-
     :param save_dir:
     :param calc:
     :param p_be: (p_vbm, p_cbm), (s, k, n) for each
     :return:
     """
     from gpaw.hybrids.energy import non_self_consistent_energy
-    calc.set(mode=PW(encut))
     if kpts is not None:
         calc.set(kpts=kpts)
     calc.get_potential_energy()
@@ -29,7 +27,6 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
     data['kpts'] = calc.parameters.kpts
-    data['encut'] = calc.parameters.encut
     data['e_tot_orig'] = eterms[0] / Ha
     data['exc_orig'] = eterms[1] / Ha
     data['xc_orig'] = calc.hamiltonian.xc.name
@@ -100,17 +97,15 @@ def call_gpaw():
 
     data_dir = settings['data_dir']
     task = settings['task'] # should be EXX or FEAT
-    atoms, calc = restart(os.path.join(data_dir, 'calc.gpw'))
-
+    atoms, calc = restart(os.path.join(data_dir, 'calc.gpw'), txt='-')
     if settings.get('save_gap_data'):
         from ase.dft.bandgap import bandgap
         gap, p_vbm, p_cbm = bandgap(calc)
         p_be = (p_vbm, p_cbm)
     else:
         p_be = None
-
     if task == 'EXX':
-        get_exx(data_dir, calc, settings['encut'], settings['kpts'], p_be=p_be)
+        get_exx(data_dir, calc, settings['kpts'], p_be=p_be)
     elif task == 'FEAT':
         save_features(settings['save_file'], data_dir, calc,
                       settings['version'], settings['gg_kwargs'],
