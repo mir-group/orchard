@@ -242,7 +242,7 @@ class StoreFeatures(FiretaskBase):
         if os.environ.get('NPROC_GPAW') is None:
             nproc = 1
         else:
-            nproc = os.environ['NPROC_GPAW']
+            nproc = self['settings'].get('nproc') or os.environ['NPROC_GPAW']
         if nproc == 1:
             cmd = 'python {call_script} {settings_path}'
         else:
