@@ -239,14 +239,18 @@ class StoreFeatures(FiretaskBase):
     required_params = ['settings']
 
     def run_task(self, fw_spec):
-        if os.environ.get('NPROC_GPAW') is None:
+        if self['settings'].get('nproc') is not None:
+            nproc = self['settings'].get('nproc')
+        elif os.environ.get('NPROC_GPAW') is None:
             nproc = 1
         else:
-            nproc = self['settings'].get('nproc') or os.environ['NPROC_GPAW']
+            nproc = os.environ['NPROC_GPAW']
         if nproc == 1:
             cmd = 'python {call_script} {settings_path}'
         else:
             cmd = 'mpirun -np {nproc} python {call_script} {settings_path}'
+
+        print('NPROC', nproc)
 
         settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
         with open(settings_path, 'w') as f:

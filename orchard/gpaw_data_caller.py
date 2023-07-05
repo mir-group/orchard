@@ -19,7 +19,7 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
     from gpaw.hybrids.energy import non_self_consistent_energy
     calc.set(mode=PW(encut))
     if kpts is not None:
-        calc.set(kpts = kpts)
+        calc.set(kpts=kpts)
     calc.get_potential_energy()
     solver = calc.parameters.eigensolver
     if solver is None:
@@ -28,6 +28,8 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
         calc.set(parallel={'domain': 1, 'band': 1})
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
+    data['kpts'] = calc.parameters.kpts
+    data['encut'] = calc.parameters.encut
     data['e_tot_orig'] = eterms[0] / Ha
     data['exc_orig'] = eterms[1] / Ha
     data['xc_orig'] = calc.hamiltonian.xc.name
