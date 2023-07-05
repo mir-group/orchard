@@ -76,9 +76,11 @@ def compile_exx_dataset(
     for MOL_ID in MOL_IDS:
         logging.info('Computing exx for {}'.format(MOL_ID))
         data_dir = os.path.join(SAVE_ROOT, 'PW-KS', FUNCTIONAL, MOL_ID)
+        new_kpts = None if 'magmom' in MOL_ID else \
+            {'density': 4.5, 'even': True, 'gamma': True}
         calc_settings = {
             'task': 'EXX',
-            'kpts': {'density': 4.5, 'even': True, 'gamma': True},
+            'kpts': new_kpts,
             'encut': 520,
             'data_dir': data_dir,
             'save_gap_data': save_gap_data,

@@ -16,7 +16,9 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
     :return:
     """
     from gpaw.hybrids.energy import non_self_consistent_energy
-    calc.set(mode=PW(encut), kpts=kpts)
+    calc.set(mode=PW(encut))
+    if kpts is not None:
+        calc.set(kpts = kpts)
     calc.get_potential_energy()
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
