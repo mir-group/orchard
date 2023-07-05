@@ -193,7 +193,7 @@ def compile_single_system(save_file, analyzer_file, version,
         data['e_tot_orig'] = analyzer.get('e_tot_orig')
     basedir = os.path.basename(save_file)
     if not os.path.exists(basedir):
-        os.makedirs(basedir)
+        os.makedirs(basedir, exist_ok=True)
     chkfile.dump(save_file, 'train_data', data)
 
 
@@ -310,12 +310,6 @@ def main():
         mol_id_code = args.mol_id_file[:-5]
     else:
         mol_id_code = args.mol_id_file
-
-    dataname = 'XTR{}_{}'.format(version.upper(), mol_id_code.upper())
-    if args.spherical_atom:
-        pass#dataname = 'SPH_' + dataname
-    if args.suffix is not None:
-        dataname = dataname + '_' + args.suffix
 
     if args.sparse_grid is None:
         sparse_level = None

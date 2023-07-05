@@ -232,6 +232,36 @@ class SaveGPAWResults(FiretaskBase):
 
         return FWAction(stored_data={'save_dir': save_dir})
 
+@explicit_serialize
+class StoreFeatures(FiretaskBase):
+
+    required_params = ['settings']
+
+    def run_task(self, fw_spec):
+        if os.environ.get('NPROC_GPAW') is None:
+            nproc = 1
+        else:
+            nproc = os.environ['NPROC_GPAW']
+        if nproc == 1:
+            cmd = 'python {call_script} {settings_path}'
+        else:
+            cmd = 'mpirun -np {nproc} python {call_script} {settings_path}'
+
+        settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
+        with open(settings_path, 'w') as f:
+            yaml.dump(self['settings'], f)
+        cmd = cmd.format(
+            nproc=nproc,
+            call_script=GPAW_CALL_SCRIPT,
+            settings_path=settings_path,
+        )
+
+        start_time = time.monotonic()
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
+        proc.wait()
+        stop_time = time.monotonic()
+        print('Script runtime is {} s'.format(stop_time - start_time))
+
 
 def make_etot_firework(
             struct, settings, method_name, system_id,
