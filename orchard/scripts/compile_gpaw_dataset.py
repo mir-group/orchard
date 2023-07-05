@@ -68,6 +68,7 @@ def compile_exx_dataset(
         MOL_IDS,
         SAVE_ROOT,
         FUNCTIONAL,
+        kpt_density,
         save_gap_data=False,
         save_baselines=True,
 ):
@@ -115,6 +116,7 @@ def main():
                         help='customize data directories with this suffix')
     parser.add_argument('--save-gap-data', action='store_true')
     parser.add_argument('--exx-only', action='store_true')
+    parser.add_argument('--kpt-density', default=4.5, type=float)
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -138,6 +140,7 @@ def main():
             mol_ids,
             SAVE_ROOT,
             args.functional,
+            kpt_density=args.kpt_density,
             save_gap_data=args.save_gap_data,
         )
     else:

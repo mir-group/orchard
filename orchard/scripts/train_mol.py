@@ -84,7 +84,7 @@ def parse_dataset_for_ctrl(args, i):
         fname = os.path.join(dirname, mol_id + '.hdf5')
         data = chkfile.load(fname, 'train_data')
         cond = data['desc'][:, 0, :] > args.density_cutoff
-        y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3))
+        y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3)) - 1
         cond = np.all(cond, axis=0)
         X = data['desc'][:, :, cond]
         exlda = LDA_FACTOR * data['desc'][:, 0, cond]**(4.0 / 3)

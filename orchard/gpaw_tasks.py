@@ -11,6 +11,7 @@ from ase import Atoms
 import copy
 
 GPAW_CALL_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_caller')
+GPAW_DATA_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_data_caller')
 
 DEFAULT_GPAW_CALC_SETTINGS = {
     'xc': 'PBE',
@@ -252,7 +253,7 @@ class StoreFeatures(FiretaskBase):
             yaml.dump(self['settings'], f)
         cmd = cmd.format(
             nproc=nproc,
-            call_script=GPAW_CALL_SCRIPT,
+            call_script=GPAW_DATA_SCRIPT,
             settings_path=settings_path,
         )
 

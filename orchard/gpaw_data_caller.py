@@ -5,6 +5,7 @@ import numpy as np
 from gpaw import restart, PW
 from ase.parallel import paropen
 from pyscf.lib import chkfile
+from ase.units import Ha
 
 
 def get_exx(data_dir, calc, encut, kpts, p_be=None):
@@ -27,10 +28,10 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
         calc.set(parallel={'domain': 1, 'band': 1})
     eterms = non_self_consistent_energy(calc, 'EXX')
     data = {}
-    data['e_tot_orig'] = eterms[0]
-    data['exc_orig'] = eterms[1]
+    data['e_tot_orig'] = eterms[0] / Ha
+    data['exc_orig'] = eterms[1] / Ha
     data['xc_orig'] = calc.hamiltonian.xc.name
-    data['exx'] = eterms[3:].sum()
+    data['exx'] = eterms[3:].sum() / Ha
     if p_be is not None:
         from gpaw.hybrids.eigenvalues import non_self_consistent_eigenvalues as nsceigs
         eig_dft_dict = {k : {} for k in ['O', 'U']}
@@ -40,9 +41,9 @@ def get_exx(data_dir, calc, encut, kpts, p_be=None):
             eig_dft, vxc_dft, vxc_hyb = nsceigs(
                 calc, 'EXX', n1=p[2], n2=p[2] + 1, kpt_indices=[p[1]]
             )
-            eig_dft_dict[l][0] = eig_dft[p[0], 0, 0]
-            vxc_dft_dict[l][0] = vxc_dft[p[0], 0, 0]
-            vxc_hyb_dict[l][0] = vxc_hyb[p[0], 0, 0]
+            eig_dft_dict[l][0] = eig_dft[p[0], 0, 0] / Ha
+            vxc_dft_dict[l][0] = vxc_dft[p[0], 0, 0] / Ha
+            vxc_hyb_dict[l][0] = vxc_hyb[p[0], 0, 0] / Ha
         data['eigvals'] = eig_dft_dict
         data['vxc_dft'] = vxc_dft_dict
         data['dval'] = vxc_hyb_dict
