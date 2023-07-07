@@ -20,15 +20,16 @@ def get_exx(data_dir, calc, kpts,
     if kpts is not None:
         calc.set(kpts=kpts)
     solver = calc.parameters.eigensolver
-    if solver is None:
-        pass
-    elif not isinstance(solver, str) or solver.lower() == 'cg':
-        calc.set(parallel={'domain': 1, 'band': 1})
+    #if solver is None:
+    #    pass
+    #elif not isinstance(solver, str) or solver.lower() == 'cg':
+    #    calc.set(parallel={'domain': 1, 'band': 1})
     calc.get_potential_energy()
     if save_gap_data:
         from ase.dft.bandgap import bandgap
         gap, p_vbm, p_cbm = bandgap(calc)
         p_be = (p_vbm, p_cbm)
+        print(p_be)
     else:
         p_be = None
     eterms = non_self_consistent_energy(calc, 'EXX')
@@ -68,16 +69,31 @@ def arr_to_strk(arr, nspin, p_be):
         'U': {'0': c},
     }
 
+def intk_to_strk(d):
+    if not isinstance(d, dict):
+        return d
+    nd = {}
+    for k, v in d.items():
+        nd[str(k)] = intk_to_strk(v)
+    return nd
+
+
 
 def save_features(save_file, data_dir, calc, version, gg_kwargs,
                   save_gap_data=False):
     from ciderpress.gpaw.analysis import get_features
-
-    with open(os.path.join(data_dir, 'exx_data.yaml'), 'r') as f:
+    print('START FEAT')
+    with paropen(os.path.join(data_dir, 'exx_data.yaml'), 'r') as f:
         data = yaml.load(f, Loader=yaml.CLoader)
+    data.pop('kpts')
     if save_gap_data:
-        p_be = data['p_be']
+        data['eigvals'] = intk_to_strk(data['eigvals'])
+        data['vxc_dft'] = intk_to_strk(data['vxc_dft'])
+        data['dval'] = intk_to_strk(data['dval'])
+        p_be = data.pop('p_be')
     else:
+        if 'p_be' in data.keys():
+            data.pop('p_be')
         p_be = None
 
     res = get_features(calc, p_i=p_be, version=version, **gg_kwargs)
@@ -96,18 +112,25 @@ def save_features(save_file, data_dir, calc, version, gg_kwargs,
     data.update({
         'rho': rho_sig,
         'desc': feat_sig,
-        'coord': None,
         'wt': all_wt,
         'nspin': nspin,
     })
+    print('WRITE FEAT')
     data['val'] = data['exx'] * all_wt / (nspin * all_wt.sum())
-    data['val'] = np.stack([data['val'], data['val']]) # sums to exx
+    if nspin == 2:
+        data['val'] = np.stack([data['val'], data['val']]) # sums to exx
+    else:
+        data['val'] = data['val'][np.newaxis, :]
     if calc.world.rank == 0:
+        save_dir = os.path.dirname(os.path.abspath(save_file))
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
         chkfile.dump(save_file, 'train_data', data)
 
 
 def call_gpaw():
-    with open(sys.argv[1], 'r') as f:
+    print('CALL GPAW')
+    with paropen(sys.argv[1], 'r') as f:
         settings = yaml.load(f, Loader=yaml.Loader)
 
     data_dir = settings['data_dir']

@@ -51,7 +51,7 @@ def get_plan_module(plan_file):
         plan_module = importlib.import_module(plan_file[1:])
     else:
         assert os.path.exists(plan_file)
-        spec = importlib.util.spec_from_file_location('plan_module')
+        spec = importlib.util.spec_from_file_location('plan_module', plan_file)
         plan_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(plan_module)
     return plan_module
@@ -84,6 +84,7 @@ def parse_dataset_for_ctrl(args, i):
         fname = os.path.join(dirname, mol_id + '.hdf5')
         data = chkfile.load(fname, 'train_data')
         cond = data['desc'][:, 0, :] > args.density_cutoff
+        print(data['desc'].shape, data['val'].shape)
         y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3)) - 1
         cond = np.all(cond, axis=0)
         X = data['desc'][:, :, cond]
@@ -153,6 +154,7 @@ def main():
                              'molecular energy data.')
     parser.add_argument('--mol-heg', action='store_true',
                         help='Include HEG constraint in molecules dataset.')
+    parser.add_argument('--scale-override', type=float, default=None)
     parser.add_argument('--scale-mul', type=float, default=1.0)
     parser.add_argument('--length-scale-mul', type=float, nargs='+',
                         default=[1.0],
@@ -233,7 +235,7 @@ def main():
         X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
         print('SHAPES', X1.shape, yctrl.shape)
         kernel = plan_module.get_kernel(
-            natural_scale=np.var(yctrl),
+            natural_scale=np.var(yctrl) if args.scale_override is None else args.scale_override,
             natural_lscale=np.std(X1, axis=0),
             scale_factor=args.scale_mul,
             lscale_factor=args.length_scale_mul,
