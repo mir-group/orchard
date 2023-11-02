@@ -1,25 +1,24 @@
 import time
 from pyscf import scf
+from pyscf.lib import chkfile
 import os, time
 import numpy as np
 from ciderpress.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
-from ciderpress.density import get_exchange_descriptors2, LDA_FACTOR, GG_AMIN
+from ciderpress.density import get_exchange_descriptors, LDA_FACTOR, GG_AMIN
 from ciderpress.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
+from ciderpress.descriptors import get_descriptors
 import logging
 import yaml
-from ase.data import chemical_symbols, atomic_numbers, ground_state_magnetic_moments
-from collections import Counter
-
 from argparse import ArgumentParser
 
 """
 Script to compile a dataset from the CIDER DB for training a CIDER functional.
 """
 
-def compile_dataset2(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
-                     spherical_atom=False, version='a', sparse_level=None,
-                     analysis_level=1, **gg_kwargs):
+def compile_dataset_old(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
+                        spherical_atom=False, version='a', sparse_level=None,
+                        analysis_level=1, **gg_kwargs):
 
     all_descriptor_data = []
     all_rho_data = []
@@ -126,6 +125,152 @@ def compile_dataset2(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
         yaml.dump(settings, f)
 
 
+def compile_single_system(save_file, analyzer_file, version,
+                          sparse_level, orbs, save_baselines, gg_kwargs):
+    start = time.monotonic()
+    analyzer = ElectronAnalyzer.load(analyzer_file)
+    if sparse_level is not None:
+        old_analyzer = analyzer
+        Analyzer = UHFAnalyzer if analyzer.atype == 'UHF' else RHFAnalyzer
+        analyzer = Analyzer(analyzer.mol, analyzer.dm, grids_level=sparse_level,
+                            mo_occ=old_analyzer.mo_occ,
+                            mo_coeff=old_analyzer.mo_coeff,
+                            mo_energy=old_analyzer.mo_energy)
+        if 'e_tot_orig' in old_analyzer._data:
+            analyzer._data['xc_orig'] = old_analyzer.get('xc_orig')
+            analyzer._data['exc_orig'] = old_analyzer.get('exc_orig')
+            analyzer._data['e_tot_orig'] = old_analyzer.get('e_tot_orig')
+        analyzer.perform_full_analysis()
+    else:
+        analyzer.get_rho_data()
+    end = time.monotonic()
+    logging.info('Analyzer load time {}'.format(end - start))
+
+    start = time.monotonic()
+    desc = get_descriptors(
+        analyzer, version=version, orbs=orbs, **gg_kwargs
+    )
+    rho_data = get_descriptors(
+        analyzer, version='l', orbs=orbs, **gg_kwargs
+    )
+    if orbs is not None:
+        desc, ddesc, eigvals = desc
+        rho_data, drho_data, _ = rho_data
+    end = time.monotonic()
+    logging.info('Get descriptor time {}'.format(end - start))
+    values = analyzer.get('ex_energy_density')
+    weights = analyzer.grids.weights
+    coords = analyzer.grids.coords
+    if isinstance(analyzer, UHFAnalyzer):
+        spinpol = True
+        values = np.stack([values[0], values[1]])
+        # NOTE not doing this factor of 2 thing anymore since
+        # training loop must be spin-aware to account for
+        # correlation functional
+        # rho_data = 2 * np.stack(rho_data[0], rho_data[1])
+        # weights *= 0.5
+    else:
+        values = values[np.newaxis, :]
+        desc = desc[np.newaxis, :]
+        spinpol = False
+
+    data = {
+        'rho': rho_data,
+        'desc': desc,
+        'val': values,
+        'coord': coords,
+        'wt': weights,
+        'nspin': 2 if spinpol else 1
+    }
+    if orbs is not None:
+        data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
+        data['ddesc'] = intk_to_strk(ddesc)
+        data['eigvals'] = intk_to_strk(eigvals)
+        data['drho_data'] = intk_to_strk(drho_data)
+    if save_baselines:
+        data['xc_orig'] = analyzer.get('xc_orig')
+        data['exc_orig'] = analyzer.get('exc_orig')
+        data['e_tot_orig'] = analyzer.get('e_tot_orig')
+    basedir = os.path.basename(save_file)
+    if not os.path.exists(basedir):
+        os.makedirs(basedir, exist_ok=True)
+    chkfile.dump(save_file, 'train_data', data)
+
+
+def intk_to_strk(d):
+    if not isinstance(d, dict):
+        return d
+    nd = {}
+    for k, v in d.items():
+        nd[str(k)] = intk_to_strk(v)
+    return nd
+
+
+def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
+                    version='b', sparse_level=None, analysis_level=1,
+                    save_gap_data=False, save_baselines=True,
+                    make_fws=False, **gg_kwargs):
+    if version not in ['b', 'd', 'l']:
+        raise ValueError('Unsupported version for new dataset module')
+
+    if save_gap_data:
+        orbs = {'O': [0], 'U': [0]}
+    else:
+        orbs = None
+
+    if sparse_level is None:
+        level = analysis_level
+    else:
+        level = sparse_level
+    if isinstance(level, int):
+        sparse_tag = '_{}'.format(level)
+    else:
+        sparse_tag = '_{}_{}'.format(level[0], level[1])
+
+    save_dir = os.path.join(
+        SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
+        version+sparse_tag, DESC_NAME,
+    ) 
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+    settings = {
+        'DATASET_NAME': DATASET_NAME,
+        'DESC_NAME': DESC_NAME,
+        'MOL_IDS': MOL_IDS,
+        'SAVE_ROOT': SAVE_ROOT,
+        'FUNCTIONAL': FUNCTIONAL,
+        'BASIS': BASIS,
+        'version': version,
+    }
+    settings.update(gg_kwargs)
+    print(save_dir, SAVE_ROOT, DESC_NAME)
+    print(os.path.join(save_dir,
+             '{}_settings.yaml'.format(DATASET_NAME)))
+    with open(os.path.join(save_dir,
+             '{}_settings.yaml'.format(DATASET_NAME)), 'w') as f:
+        yaml.dump(settings, f)
+
+    if make_fws:
+        from orchard.pyscf_tasks import StoreFeatures
+        fwlist = {}
+
+    for MOL_ID in MOL_IDS:
+        logging.info('Computing descriptors for {}'.format(MOL_ID))
+        data_dir = get_save_dir(SAVE_ROOT, 'KS', BASIS, MOL_ID, FUNCTIONAL)
+        save_file = os.path.join(save_dir, MOL_ID + '.hdf5')
+        analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
+        args = (save_file, analyzer_file, version,
+                sparse_level, orbs, save_baselines, gg_kwargs)
+        if make_fws:
+            fwname = 'feature_{}_{}'.format(version, MOL_ID)
+            fwlist[fwname] = StoreFeatures(args=args)
+        else:
+            compile_single_system(*args)
+
+    if make_fws:
+        return fwlist
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -152,6 +297,8 @@ def main():
                         help='Level of analysis to search for each system, looks for analysis_L{analysis-level}.hdf5')
     parser.add_argument('--sparse-grid', default=None, type=int, nargs='+',
                         help='use a sparse grid to compute features, etc. If set, recomputes data.')
+    parser.add_argument('--make-fws', action='store_true')
+    parser.add_argument('--save-gap-data', action='store_true')
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -163,12 +310,6 @@ def main():
         mol_id_code = args.mol_id_file[:-5]
     else:
         mol_id_code = args.mol_id_file
-
-    dataname = 'XTR{}_{}'.format(version.upper(), mol_id_code.upper())
-    if args.spherical_atom:
-        pass#dataname = 'SPH_' + dataname
-    if args.suffix is not None:
-        dataname = dataname + '_' + args.suffix
 
     if args.sparse_grid is None:
         sparse_level = None
@@ -186,12 +327,23 @@ def main():
     }
     if version in ['b', 'd', 'e']:
         gg_kwargs['vvmul'] = args.gg_vvmul
-    compile_dataset2(
-        dataname, mol_ids, SAVE_ROOT, args.functional, args.basis, 
-        spherical_atom=args.spherical_atom, version=version,
+    res = compile_dataset(
+        '_UNNAMED' if args.suffix is None else args.suffix,
+        mol_id_code.upper().split('/')[-1], mol_ids, SAVE_ROOT,
+        args.functional, args.basis, 
+        #spherical_atom=args.spherical_atom,
+        version=version,
         analysis_level=args.analysis_level, sparse_level=sparse_level,
+        save_gap_data=args.save_gap_data, make_fws=args.make_fws,
         **gg_kwargs
     )
+    if args.make_fws:
+        from fireworks import LaunchPad, Firework
+        launchpad = LaunchPad.auto_load()
+        for fw in res:
+            fw = Firework([res[fw]], name=fw)
+            print(fw.name)
+            launchpad.add_wf(fw)
 
 if __name__ == '__main__':
     main()

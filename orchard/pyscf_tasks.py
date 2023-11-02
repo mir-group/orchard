@@ -224,6 +224,17 @@ class RunAnalysis(FiretaskBase):
         return FWAction(stored_data={'save_dir': save_dir})
 
 
+@explicit_serialize
+class StoreFeatures(FiretaskBase):
+
+    required_params = ['args']
+
+    def run_task(self, fw_spec):
+        from orchard.scripts.compile_dataset import compile_single_system
+        args = self['args']
+        compile_single_system(*args)
+
+
 def make_etot_firework(
             struct, settings, method_name, system_id,
             save_root_dir, no_overwrite=False,

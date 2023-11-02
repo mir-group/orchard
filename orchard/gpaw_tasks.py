@@ -11,6 +11,7 @@ from ase import Atoms
 import copy
 
 GPAW_CALL_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_caller')
+GPAW_DATA_SCRIPT = __file__.replace('gpaw_tasks', 'gpaw_data_caller')
 
 DEFAULT_GPAW_CALC_SETTINGS = {
     'xc': 'PBE',
@@ -231,6 +232,53 @@ class SaveGPAWResults(FiretaskBase):
             shutil.copyfile(fw_spec['save_file'], os.path.join(save_dir, 'calc.gpw'))
 
         return FWAction(stored_data={'save_dir': save_dir})
+
+@explicit_serialize
+class StoreFeatures(FiretaskBase):
+
+    required_params = ['settings']
+
+    def run_task(self, fw_spec):
+        if self['settings'].get('nproc') is not None:
+            nproc = self['settings'].get('nproc')
+        elif os.environ.get('NPROC_GPAW') is None:
+            nproc = 1
+        else:
+            nproc = os.environ['NPROC_GPAW']
+        if nproc == 1:
+            cmd = 'python -u {call_script} {settings_path}'
+        else:
+            cmd = 'mpirun -np {nproc} python -u {call_script} {settings_path}'
+
+        print('NPROC', nproc)
+
+        settings_path = os.path.abspath('./gpaw_settings_tmp.yaml')
+        with open(settings_path, 'w') as f:
+            yaml.dump(self['settings'], f)
+        cmd = cmd.format(
+            nproc=nproc,
+            call_script=GPAW_DATA_SCRIPT,
+            settings_path=settings_path,
+        )
+
+        logfile = os.path.abspath('calc.txt')
+        #with open(logfile, 'w') as f:
+        #    print('LOGFILE', logfile)
+        #    start_time = time.monotonic()
+        #    #proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
+        #    proc = subprocess.Popen(shlex.split(cmd), shell=False, capture_output=True)
+        #    return_code = proc.wait()
+        #    assert return_code == 0
+        #    stop_time = time.monotonic()
+        #    print('Script runtime is {} s'.format(stop_time - start_time))
+
+        print('LOGFILE', logfile)
+        start_time = time.monotonic()
+        proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=sys.stdout, stderr=sys.stderr)
+        return_code = proc.wait()
+        assert return_code == 0
+        stop_time = time.monotonic()
+        print('Script runtime is {} s'.format(stop_time - start_time))
 
 
 def make_etot_firework(
