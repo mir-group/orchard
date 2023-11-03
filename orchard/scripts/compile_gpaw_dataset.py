@@ -16,14 +16,18 @@ def compile_dataset(
         version='b',
         save_gap_data=False,
         save_baselines=True,
+        save_dir=None,
 ):
     if version not in ['b', 'd']:
         raise ValueError('Unsupported version for new dataset module')
 
-    save_dir = os.path.join(
-        SAVE_ROOT, 'DATASETS', FUNCTIONAL,
-        version, DESC_NAME,
-    )
+    if save_dir is None:
+        save_dir = os.path.join(
+            SAVE_ROOT, 'DATASETS', FUNCTIONAL,
+            version, DESC_NAME,
+        )
+    else:
+        save_dir = os.path.join(save_dir, DESC_NAME)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
     settings = {
@@ -117,6 +121,8 @@ def main():
     parser.add_argument('--save-gap-data', action='store_true')
     parser.add_argument('--exx-only', action='store_true')
     parser.add_argument('--kpt-density', default=4.5, type=float)
+    parser.add_argument('--save-dir', default=None, type=str,
+                        help='override default save directory for features')
     args = parser.parse_args()
 
     version = args.version.lower()
@@ -153,6 +159,7 @@ def main():
             gg_kwargs,
             version=version,
             save_gap_data=args.save_gap_data,
+            save_dir=args.save_dir,
         )
     from fireworks import LaunchPad, Firework
     launchpad = LaunchPad.auto_load()
