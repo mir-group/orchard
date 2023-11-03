@@ -3,7 +3,7 @@ import os
 import numpy as np
 from joblib import load, dump
 from orchard.workflow_utils import SAVE_ROOT, load_rxns
-from ciderpress.models.train import DescParams, MOLGP
+from ciderpress.models.train import DescParams, MOLGP, strk_to_tuplek
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.baselines import BASELINE_CODES
 from ciderpress.xcutil.transform_data import FeatureList
@@ -85,22 +85,41 @@ def find_datasets(fname, args):
     ddirs = {}
     for feat_type, feat_name in name_dict.items():
         fname = '{}_settings.yaml'.format(fname)
-        reldir = os.path.join(
-            'DATASETS', args.functional, args.basis,
-            feat_type, feat_name, fname
-        )
-        if args.extra_dirs is None:
-            fname = os.path.join(SAVE_ROOT, reldir)
-        else:
-            ddirs = [SAVE_ROOT] + args.extra_dirs
-            for dd in ddirs:
-                cdd = os.path.join(dd, 'DATASETS', reldir)
-                print(cdd)
-                if os.path.exists(cdd):
-                    fname = cdd
-                    break
+        if args.save_dir is None:
+            reldir = os.path.join(
+                'DATASETS', args.functional, args.basis,
+                feat_type, feat_name, fname
+            )
+            if args.extra_dirs is None:
+                fname = os.path.join(SAVE_ROOT, reldir)
             else:
-                raise FileNotFoundError('Could not find dataset in provided dirs')
+                ddirs = [SAVE_ROOT] + args.extra_dirs
+                for dd in ddirs:
+                    cdd = os.path.join(dd, 'DATASETS', reldir)
+                    print(cdd)
+                    if os.path.exists(cdd):
+                        fname = cdd
+                        break
+                else:
+                    raise FileNotFoundError(
+                        'Could not find dataset in provided dirs'
+                    )
+        else:
+            absdir = os.path.join(args.save_dir, feat_type, feat_name, fname)
+            if args.extra_dirs is None:
+                fname = absdir
+            else:
+                ddirs = [os.path.dirname(absdir)] + args.extra_dirs
+                for dd in ddirs:
+                    cdd = os.path.join(dd, fname)
+                    print(cdd)
+                    if os.path.exists(cdd):
+                        fname = cdd
+                        break
+                else:
+                    raise FileNotFoundError(
+                        'Could not find dataset in provided dirs'
+                    )
         ddirs[feat_type] = os.path.dirname(fname)
     return ddirs
 
@@ -117,11 +136,13 @@ def get_plan_module(plan_file):
 
 
 def parse_dataset_for_ctrl(fname, n, args):
-    dirname = find_dataset(fname, args)
+    dirname = find_datasets(fname, args)
     with open(os.path.join(dirname, '{}_settings.yaml'.format(fname)), 'r') as f:
         settings = yaml.load(f, Loader=yaml.CLoader)
         mol_ids = settings['MOL_IDS']
     Xlist = []
+    GXOlist = []
+    GXUlist = []
     ylist = []
     for mol_id in mol_ids:
         fname = os.path.join(dirname, mol_id + '.hdf5')
@@ -131,14 +152,70 @@ def parse_dataset_for_ctrl(fname, n, args):
         y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3)) - 1
         cond = np.all(cond, axis=0)
         X = data['desc'][:, :, cond]
+        if 'ddesc' in data:
+            ddesc = strk_to_tuplek(data['ddesc'])
+            print(ddesc.keys())
+            has_ddesc = True
+            GXO = ddesc[('O', 0)][1][:, cond]
+            GXU = ddesc[('U', 0)][1][:, cond]
+        else:
+            has_ddesc = False
         if args.randomize:
             inds = np.arange(X.shape[-1])
             np.random.shuffle(inds)
             X = X[..., inds]
+            if has_ddesc:
+                GXO = GXO[..., inds]
+                GXU = GXU[..., inds]
         if n is not None:
             Xlist.append(X[..., ::n])
+            if has_ddesc:
+                GXOlist.append((ddesc[('O', 0)][0], GXO[..., ::n]))
+                GXUlist.append((ddesc[('U', 0)][0], GXU[..., ::n]))
             ylist.append(y[::n])
-    return Xlist, ylist, mol_ids
+    return Xlist, GXOlist, GXUlist, ylist, mol_ids
+
+
+def get_fd_x1(kernel, Xlist, DXlist, delta=1e-5):
+    if len(Xlist) == 0:
+        return 0
+    nfeat = Xlist[0].shape[1]
+    print('NFEAT', nfeat)
+    deriv = 0
+    for i in range(nfeat):
+        slist = [DX[0] for DX in DXlist]
+        IDXlist = [DX[1][i] for DX in DXlist]
+        for s, X in zip(slist, Xlist):
+            X[s, i, :] += 0.5 * delta
+        utmp = kernel.X0Tlist_to_X1array_mul(Xlist, IDXlist)
+        for s, X in zip(slist, Xlist):
+            X[s, i, :] -= delta
+        ltmp = kernel.X0Tlist_to_X1array_mul(Xlist, IDXlist)
+        for s, X in zip(slist, Xlist):
+            X[s, i, :] += 0.5 * delta
+        print(i, utmp[0], ltmp[0])
+        deriv += (utmp - ltmp) / delta
+    return deriv
+
+
+def analyze_cov(X1, avg_and_std=None):
+    if avg_and_std is None:
+        avg = np.mean(X1, axis=0)
+        std = np.std(X1, axis=0)
+    else:
+        avg, std = avg_and_std
+    XW = X1 - avg
+    XW /= std
+    cov = XW.T.dot(XW) / XW.shape[0]
+    evals, evecs = np.linalg.eigh(cov)
+    #return avg, std, evals, evecs
+    print('COV')
+    print(avg)
+    print(std)
+    print(cov)
+    print(evals)
+    print(evecs)
+    return avg, std, cov, evals, evecs
 
 
 def main():
@@ -261,6 +338,10 @@ def main():
         '--debug-spline', type=str, default=None,
         help='Load joblib and print debug'
     )
+    parser.add_argument(
+        '--save-dir', default=None, type=str,
+        help='Override default save directory for features.'
+    )
     args = parser.parse_args()
     settings = parse_settings(args)
     if args.debug_model is not None:
@@ -276,14 +357,22 @@ def main():
     datasets_list = list(data_settings['systems'].keys())
 
     Xlist = []
+    GXRlist = []
+    GXOlist = []
+    GXUlist = []
     ylist = []
     molid_map = {}
     for dset_name in datasets_list:
         n = data_settings['systems'][dset_name].get('inverse_sampling_density')
-        Xlist_tmp, y_tmp, dset_ids = parse_dataset_for_ctrl(
-            dset_name, n, args
-        )
+        Xlist_tmp, GXOlist_tmp, GXUlist_tmp, y_tmp, dset_ids = \
+            parse_dataset_for_ctrl(
+                dset_name, n, args
+            )
         Xlist += Xlist_tmp
+        if len(GXOlist_tmp) == len(Xlist_tmp):
+            GXRlist += Xlist_tmp
+            GXOlist += GXOlist_tmp
+            GXUlist += GXUlist_tmp
         ylist += y_tmp
         molid_map[dset_name] = dset_ids
     yctrl = np.concatenate(ylist, axis=0)
@@ -306,14 +395,30 @@ def main():
             additive_baseline=BASELINE_CODES.get(plan['additive_baseline']),
             ctrl_tol=ctrl_tol,
             ctrl_nmax=ctrl_nmax,
+            component=plan.get('component')
         ))
-        X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
-        print('SHAPES', X1.shape, yctrl.shape)
+        if 'lscale_override' in plan:
+            lscale = np.array(plan.pop('lscale_override'))
+            val_pca = None
+            deriv_pca = None
+        else:
+            X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
+            DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
+            DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
+            val_pca = analyze_cov(X1)
+            analyze_cov(DXO1, avg_and_std=val_pca[:2])
+            analyze_cov(DXU1, avg_and_std=val_pca[:2])
+            deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
+            lscale = np.std(X1, axis=0)
+            print('SHAPES', X1.shape, yctrl.shape)
         kernel = plan_module.get_kernel(
-            natural_scale=np.var(yctrl) if args.scale_override is None else args.scale_override,
-            natural_lscale=np.std(X1, axis=0),
+            natural_scale=(np.var(yctrl) if args.scale_override is None
+                           else args.scale_override),
+            natural_lscale=lscale,
             scale_factor=args.scale_mul,
             lscale_factor=args.length_scale_mul,
+            val_pca=val_pca,
+            deriv_pca=deriv_pca,
         )
         kernels[-1].set_kernel(kernel)
         if 'mapping_plan' in dir(plan_module):
@@ -331,13 +436,16 @@ def main():
     gpr.args = args
 
     gpr.set_control_points(Xlist, reduce=True)
+    print('CTRL SIZE', kernels[-1].X1ctrl.shape)
 
     rxn_list = []
+    rxn_id_list = []
     rxn_ids = list(data_settings['reactions'].keys())
     for i, rxn_id in enumerate(rxn_ids):
         rxn_dict = load_rxns(rxn_id)
         mode = data_settings['reactions'][rxn_id].get('mode') or 0
-        for v in list(rxn_dict.values()):
+        for k, v in list(rxn_dict.items()):
+            rxn_id_list.append(k)
             rxn_list.append((mode, v))
 
     for i, fname in enumerate(datasets_list):
@@ -351,6 +459,34 @@ def main():
     gpr.add_reactions(rxn_list)
 
     gpr.fit()
+
+    K = gpr.Kcov_
+    y = gpr.y_mol_
+    alpha = gpr.alpha_mol_
+    y_pred = K.dot(alpha)
+    dy = y_pred - y
+    rtkd = np.sqrt(np.diag(K))
+    rxn_id_arr = np.array(rxn_id_list)
+    nitems = 20
+    for i, rxn_id in enumerate(rxn_id_list):
+        rel_cov = K[i] / (rtkd * rtkd[i] + 1e-16)
+        print(rxn_id)
+        inds = np.argsort(np.abs(rel_cov))
+        inds = np.flip(inds)[:nitems]
+        print(rxn_id_arr[inds])
+        print(rel_cov[inds])
+        print(dy[inds])
+        print()
+    ana_set = {
+        'K': K,
+        'Kfull': gpr.K_,
+        'y_pred': y_pred,
+        'y': y,
+        'alpha': alpha,
+        'rxn_id_list': rxn_id_list,
+    }
+    with open('train_analysis.yaml', 'w') as f:
+        yaml.dump(ana_set, f, Dumper=yaml.CDumper)
 
     dump(gpr, args.save_file)
 

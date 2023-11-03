@@ -104,9 +104,9 @@ def compile_single_system(
         }
         if orbs is not None:
             data['ddesc'] = intk_to_strk(ddesc)
-    basedir = os.path.basename(save_file)
-    if not os.path.exists(basedir):
-        os.makedirs(basedir, exist_ok=True)
+    dirname = os.path.dirname(os.path.abspath(save_file))
+    if not os.path.exists(dirname):
+        os.makedirs(dirname, exist_ok=True)
     chkfile.dump(save_file, 'train_data', data)
 
 
@@ -122,16 +122,22 @@ def compile_dataset(
         analysis_level=1,
         save_gap_data=False,
         save_baselines=True,
-        make_fws=False
+        make_fws=False,
+        skip_existing=False,
+        save_dir=None,
 ):
     if save_gap_data:
         orbs = {'O': [0], 'U': [0]}
     else:
         orbs = None
     feat_type = get_feat_type(settings)
-    save_dir = os.path.join(
-        save_root, 'DATASETS', functional, basis, feat_type, feat_name,
-    )
+    if save_dir is None:
+        save_dir = os.path.join(
+            save_root, 'DATASETS', functional,
+            basis, feat_type, feat_name
+        )
+    else:
+        save_dir = os.path.join(save_dir, feat_type, feat_name)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
     settings = {
@@ -154,6 +160,9 @@ def compile_dataset(
         logging.info('Computing descriptors for {}'.format(mol_id))
         data_dir = get_save_dir(save_root, 'KS', basis, mol_id, functional)
         save_file = os.path.join(save_dir, mol_id + '.hdf5')
+        if os.path.exists(save_file) and skip_existing:
+            print('Already exists, skipping:', mol_id)
+            continue
         analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
         args = (settings, save_file, analyzer_file,
                 sparse_level, orbs, save_baselines)
@@ -212,6 +221,14 @@ def main():
         '--save-gap-data', action='store_true',
         help='If True, store the band gap data for eac molecule.'
     )
+    parser.add_argument(
+        '--skip-existing', action='store_true',
+        help='skip system if save_file exists already'
+    )
+    parser.add_argument(
+        '--save-dir', default=None, type=str,
+        help='override default save directory for features'
+    )
     args = parser.parse_args()
 
     if args.settings_file is None:
@@ -247,6 +264,8 @@ def main():
         save_gap_data=args.save_gap_data,
         save_baselines=args.save_baselines,
         make_fws=args.make_fws,
+        skip_existing=args.skip_existing,
+        save_dir=args.save_dir
     )
     if args.make_fws:
         from fireworks import LaunchPad, Firework
