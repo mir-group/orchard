@@ -55,13 +55,13 @@ def compile_dataset_old(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
             logging.info('Index scanning time {}'.format(end - start))
         start = time.monotonic()
         if restricted:
-            descriptor_data = get_exchange_descriptors2(
+            descriptor_data = get_exchange_descriptors(
                 analyzer, restricted=True, version=version,
                 **gg_kwargs
             )
         else:
             descriptor_data_u, descriptor_data_d = \
-                              get_exchange_descriptors2(
+                              get_exchange_descriptors(
                                 analyzer, restricted=False, version=version,
                                 **gg_kwargs
                               )
@@ -230,7 +230,7 @@ def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BAS
     save_dir = os.path.join(
         SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
         version+sparse_tag, DESC_NAME,
-    ) 
+    )
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
     settings = {

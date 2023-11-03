@@ -224,7 +224,6 @@ def main():
         ctrl_nmax = plan.get('ctrl_nmax')
         kernels.append(DFTKernel(
             None,
-            desc_params,
             feature_list,
             plan['mode'],
             BASELINE_CODES[plan['multiplicative_baseline']],
@@ -272,17 +271,6 @@ def main():
         fname = find_dataset(fname, args)
         gpr.store_mol_covs(fname, mol_ids, get_orb_deriv=load_orbs,
                            get_correlation=True)
-    # TODO add utilities for saving exact constraints!
-    #if args.mol_heg:
-    #    vw_tmp, exx_tmp = compute_heg_covs(model)
-    #    vwrtt_list.append(vw_tmp)
-    #    exx_list.append(exx_tmp)
-    #    system_ids.append('UNIFORM_ELECTRON_GAS')
-    #    rxn_list.append((
-    #        0,
-    #        {'structs': ['UNIFORM_ELECTRON_GAS'],
-    #         'counts': [1], 'noise': 0.00}
-    #    ))
 
     gpr.add_reactions(rxn_list)
 
