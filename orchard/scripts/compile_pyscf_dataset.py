@@ -231,7 +231,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.settings_file is None:
+    if args.settings_file is None or args.settings_file == '__REF__':
         settings = 'l'
     else:
         with open(args.settings_file, 'r') as f:
