@@ -162,12 +162,15 @@ def setup_calc(atoms, settings):
 
     calc.grids.__dict__.update(settings['grids'])
     if settings['control'].get('dftd3'):
-        from pyscf import dftd3
-        calc = dftd3.dftd3(calc)
+        import dftd3.pyscf as d3
+        calc = d3.energy(calc)
         d3v = settings['control'].get('dftd3_version')
         if d3v is not None:
             print('DFTD3: Setting version to', d3v)
             calc.with_dftd3.version = d3v
+        d3xc = settings['control'].get('dftd3_xc')
+        if d3xc is not None:
+            calc.with_dftd3.xc = d3xc
     elif settings['control'].get('dftd4'):
         import dftd4.pyscf as pyd4
         calc = pyd4.energy(calc)
