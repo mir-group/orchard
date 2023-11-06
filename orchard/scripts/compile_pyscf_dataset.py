@@ -1,5 +1,5 @@
 import os
-from orchard.pyscf_tasks import StoreFeatures
+from orchard.pyscf_tasks import StoreFeatures2
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
 from ciderpress.pyscf.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from ciderpress.new_dft.settings import SemilocalSettings, NLDFSettings, \
@@ -92,7 +92,7 @@ def compile_single_system(
         }
         if orbs is not None:
             data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
-            data['drho_data'] = ddesc
+            data['drho_data'] = intk_to_strk(ddesc)
             data['eigvals'] = intk_to_strk(eigvals)
         if save_baselines:
             data['xc_orig'] = analyzer.get('xc_orig')
@@ -111,7 +111,7 @@ def compile_single_system(
 
 
 def compile_dataset(
-        settings,
+        feat_settings,
         feat_name,
         dataset_name,
         mol_id_list,
@@ -130,7 +130,7 @@ def compile_dataset(
         orbs = {'O': [0], 'U': [0]}
     else:
         orbs = None
-    feat_type = get_feat_type(settings)
+    feat_type = get_feat_type(feat_settings)
     if save_dir is None:
         save_dir = os.path.join(
             save_root, 'DATASETS', functional,
@@ -147,7 +147,7 @@ def compile_dataset(
         'SAVE_ROOT'     : save_root,
         'FUNCTIONAL'    : functional,
         'BASIS'         : basis,
-        'FEAT_SETTINGS' : settings,
+        'FEAT_SETTINGS' : feat_settings,
     }
     print(save_dir, save_root, feat_name)
     settings_fname = '{}_settings.yaml'.format(dataset_name)
@@ -164,11 +164,12 @@ def compile_dataset(
             print('Already exists, skipping:', mol_id)
             continue
         analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
-        args = (settings, save_file, analyzer_file,
-                sparse_level, orbs, save_baselines)
+        args = [feat_settings, save_file, analyzer_file,
+                sparse_level, orbs, save_baselines]
         if make_fws:
             fwname = 'feature_{}_{}'.format(feat_name, mol_id)
-            fwlist[fwname] = StoreFeatures(args=args)
+            args[0] = yaml.dump(args[0], Dumper=yaml.CDumper)
+            fwlist[fwname] = StoreFeatures2(args=args)
         else:
             compile_single_system(*args)
     return fwlist
@@ -183,7 +184,7 @@ def main():
         help='yaml file from whcih to read mol_ids to parse'
     )
     parser.add_argument(
-        'feat-name', type=str,
+        'feat_name', type=str,
         help='Name of the feature set being generated, used to make '
              'save directory for generated data.'
     )
@@ -192,7 +193,7 @@ def main():
         help='Basis set that was used for the DFT calculations'
     )
     parser.add_argument(
-        '--settings_file', metavar='settings_file', type=str, default=None,
+        '--settings-file', metavar='settings_file', type=str, default=None,
         help="Path to a yaml file containing a serialized FeatureSettings "
              "class. If not provided, generates the reference data "
              "(i.e. semilocal density, EXX and XC reference, etc.)"
@@ -262,7 +263,6 @@ def main():
         args.basis,
         sparse_level=sparse_level,
         save_gap_data=args.save_gap_data,
-        save_baselines=args.save_baselines,
         make_fws=args.make_fws,
         skip_existing=args.skip_existing,
         save_dir=args.save_dir
