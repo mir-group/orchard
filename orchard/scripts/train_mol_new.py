@@ -6,9 +6,9 @@ from orchard.workflow_utils import SAVE_ROOT, load_rxns
 from ciderpress.models.train import DescParams, MOLGP, strk_to_tuplek
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.baselines import BASELINE_CODES
-from ciderpress.xcutil.transform_data import FeatureList
-from ciderpress.density import LDA_FACTOR
-from ciderpress.new_dft.settings import EmptySettings, FeatureSettings
+from ciderpress.new_dft.transform_data import FeatureList
+from ciderpress.new_dft.settings import EmptySettings, FeatureSettings, \
+    LDA_FACTOR
 from pyscf.lib import chkfile
 import importlib
 import yaml
@@ -266,21 +266,6 @@ def main():
         '--dataset-file', type=str,
         help='Path to yaml file containing names of datasets to load '
              'along with instructions for loading said datasets.'
-    )
-    parser.add_argument(
-        '--datasets-list', nargs='+',
-        help='Pairs of dataset names and inverse sampling densities.'
-    )
-    parser.add_argument(
-        '--load-orbs-list', nargs='+',
-        help='Pairs of dataset names and 0 (n0) or 1 (yes) for '
-             'whether to load orbital occupation gradients. Default is 1 if '
-             'orbs are in the dataset, else 0. This string overrides defaults.'
-    )
-    parser.add_argument(
-        '--reactions-list', nargs='+',
-        help='Pairs of dataset names and modes for reactions files; '
-             'mode 0=x-only, 1=c-only, 2-xc'
     )
     parser.add_argument(
         '--extra-dirs', nargs='+', default=None,
