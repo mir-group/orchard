@@ -62,8 +62,6 @@ def get_base_path(dset_name, data_settings):
 
 
 def parse_settings(set0, data_settings, args):
-    with open(args.normalizer_file, 'r') as f:
-        normalizers = yaml.load(f, Loader=yaml.CLoader)
     base_dname = get_base_path(set0, data_settings)
     settings_dict = {}
     name_dict = _get_name_dict(args)
@@ -77,6 +75,11 @@ def parse_settings(set0, data_settings, args):
         fname = os.path.join(dname, '{}_settings.yaml'.format(set0))
         with open(fname, 'r') as f:
             settings_dict[feat_type] = yaml.load(f, Loader=yaml.CLoader)['FEAT_SETTINGS']
+    if args.normalizer_file is None:
+        normalizers = None
+    else:
+        with open(args.normalizer_file, 'r') as f:
+            normalizers = yaml.load(f, Loader=yaml.CLoader)
     settings = FeatureSettings(
         sl_settings=settings_dict['SL'],
         nldf_settings=settings_dict['NLDF'],
@@ -85,6 +88,8 @@ def parse_settings(set0, data_settings, args):
         hyb_settings=settings_dict['HYB'],
         normalizers=normalizers,
     )
+    if args.normalizer_file is None:
+        settings.assign_reasonable_normalizer()
     return settings
 
 
@@ -222,7 +227,8 @@ def main():
         'sl_feat_name', type=str, help='Name of semilocal feature set'
     )
     parser.add_argument(
-        'normalizer_file', type=str, help='Path to normalizer yaml file.'
+        '--normalizer-file', type=str, default=None,
+        help='Path to normalizer yaml file.'
     )
     parser.add_argument(
         '--nldf-feat-name', type=str, default=None,
@@ -313,7 +319,10 @@ def main():
     np.random.seed(args.seed)
     datasets_list = list(data_settings['systems'].keys())
     settings = parse_settings(datasets_list[0], data_settings, args)
-    print('USPS', settings.get_feat_usps())
+    print('USPS', settings.get_feat_usps(),
+          settings.get_feat_usps(with_normalizers=True))
+    print('UEGS', settings.ueg_vector(),
+          settings.ueg_vector(with_normalizers=True))
 
     Xlist = []
     GXRlist = []
