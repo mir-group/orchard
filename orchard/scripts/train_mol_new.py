@@ -43,6 +43,7 @@ warnings.showwarning = warn_with_traceback
 
 def _get_name_dict(args):
     return {
+        'REF'  : args.ref_feat_name,
         'SL'   : args.sl_feat_name,
         'NLDF' : args.nldf_feat_name,
         'NLOF' : args.nlof_feat_name,
@@ -51,24 +52,31 @@ def _get_name_dict(args):
     }
 
 
-def parse_settings(args):
-    set0 = args.datasets_list[0]
+def get_base_path(dset_name, data_settings):
+    pathid = data_settings['systems'][dset_name]['path']
+    if isinstance(pathid, int):
+        base_dname = data_settings['paths'][pathid]
+    else:
+        base_dname = pathid
+    return base_dname
+
+
+def parse_settings(set0, data_settings, args):
     with open(args.normalizer_file, 'r') as f:
         normalizers = yaml.load(f, Loader=yaml.CLoader)
-    base_dname = os.path.join(
-        SAVE_ROOT, 'DATASETS', args.functional, args.basis
-    )
+    base_dname = get_base_path(set0, data_settings)
     settings_dict = {}
     name_dict = _get_name_dict(args)
     for feat_type, feat_name in name_dict.items():
         if feat_name is None:
             settings_dict[feat_type] = None
+            continue
         dname = os.path.join(
-            base_dname, feat_type, feat_name, set0
+            base_dname, feat_type, feat_name,
         )
         fname = os.path.join(dname, '{}_settings.yaml'.format(set0))
         with open(fname, 'r') as f:
-            settings_dict[feat_type] = yaml.load(f, Loader=yaml.Loader)
+            settings_dict[feat_type] = yaml.load(f, Loader=yaml.CLoader)['FEAT_SETTINGS']
     settings = FeatureSettings(
         sl_settings=settings_dict['SL'],
         nldf_settings=settings_dict['NLDF'],
@@ -80,46 +88,18 @@ def parse_settings(args):
     return settings
 
 
-def find_datasets(fname, args):
+def find_datasets(dataset_name, args, data_settings):
     name_dict = _get_name_dict(args)
     ddirs = {}
     for feat_type, feat_name in name_dict.items():
-        fname = '{}_settings.yaml'.format(fname)
-        if args.save_dir is None:
-            reldir = os.path.join(
-                'DATASETS', args.functional, args.basis,
-                feat_type, feat_name, fname
-            )
-            if args.extra_dirs is None:
-                fname = os.path.join(SAVE_ROOT, reldir)
-            else:
-                ddirs = [SAVE_ROOT] + args.extra_dirs
-                for dd in ddirs:
-                    cdd = os.path.join(dd, 'DATASETS', reldir)
-                    print(cdd)
-                    if os.path.exists(cdd):
-                        fname = cdd
-                        break
-                else:
-                    raise FileNotFoundError(
-                        'Could not find dataset in provided dirs'
-                    )
-        else:
-            absdir = os.path.join(args.save_dir, feat_type, feat_name, fname)
-            if args.extra_dirs is None:
-                fname = absdir
-            else:
-                ddirs = [os.path.dirname(absdir)] + args.extra_dirs
-                for dd in ddirs:
-                    cdd = os.path.join(dd, fname)
-                    print(cdd)
-                    if os.path.exists(cdd):
-                        fname = cdd
-                        break
-                else:
-                    raise FileNotFoundError(
-                        'Could not find dataset in provided dirs'
-                    )
+        if feat_name is None:
+            ddirs[feat_type] = None
+            continue
+        base_path = get_base_path(dataset_name, data_settings)
+        fname = '{}_settings.yaml'.format(dataset_name)
+        fname = os.path.join(base_path, feat_type, feat_name, fname)
+        if not os.path.exists(fname):
+            raise FileNotFoundError('Data directory {} does not exist.'.format(fname))
         ddirs[feat_type] = os.path.dirname(fname)
     return ddirs
 
@@ -135,9 +115,10 @@ def get_plan_module(plan_file):
     return plan_module
 
 
-def parse_dataset_for_ctrl(fname, n, args):
-    dirname = find_datasets(fname, args)
-    with open(os.path.join(dirname, '{}_settings.yaml'.format(fname)), 'r') as f:
+def parse_dataset_for_ctrl(fname, n, args, data_settings, feat_settings):
+    print(fname, n, data_settings)
+    dirnames = find_datasets(fname, args, data_settings)
+    with open(os.path.join(dirnames['SL'], '{}_settings.yaml'.format(fname)), 'r') as f:
         settings = yaml.load(f, Loader=yaml.CLoader)
         mol_ids = settings['MOL_IDS']
     Xlist = []
@@ -145,19 +126,25 @@ def parse_dataset_for_ctrl(fname, n, args):
     GXUlist = []
     ylist = []
     for mol_id in mol_ids:
-        fname = os.path.join(dirname, mol_id + '.hdf5')
-        data = chkfile.load(fname, 'train_data')
+        data = MOLGP.load_data(dirnames, mol_id, None, 'new')
         cond = data['desc'][:, 0, :] > args.density_cutoff
         print(data['desc'].shape, data['val'].shape)
         y = data['val'][cond] / (LDA_FACTOR * data['desc'][:, 0][cond]**(4.0 / 3)) - 1
         cond = np.all(cond, axis=0)
-        X = data['desc'][:, :, cond]
+        desc = data['desc'][:, :, cond]
+        X = feat_settings.normalizers.get_normalized_feature_vector(desc)
         if 'ddesc' in data:
             ddesc = strk_to_tuplek(data['ddesc'])
             print(ddesc.keys())
             has_ddesc = True
             GXO = ddesc[('O', 0)][1][:, cond]
             GXU = ddesc[('U', 0)][1][:, cond]
+            GXO = feat_settings.normalizers.get_derivative_of_normed_features(
+                desc[ddesc[('O', 0)][0]], GXO
+            )
+            GXU = feat_settings.normalizers.get_derivative_of_normed_features(
+                desc[ddesc[('U', 0)][0]], GXU
+            )
         else:
             has_ddesc = False
         if args.randomize:
@@ -229,16 +216,13 @@ def main():
         'save_file', type=str, help='file to which to save new GP'
     )
     parser.add_argument(
-        'ref-feat-name', type=str, help='Name of reference data set'
+        'ref_feat_name', type=str, help='Name of reference data set'
     )
     parser.add_argument(
-        'sl-feat-name', type=str, help='Name of semilocal feature set'
+        'sl_feat_name', type=str, help='Name of semilocal feature set'
     )
     parser.add_argument(
-        'normalizer-file', type=str, help='Path to normalizer yaml file.'
-    )
-    parser.add_argument(
-        'basis', metavar='basis', type=str, help='basis set code'
+        'normalizer_file', type=str, help='Path to normalizer yaml file.'
     )
     parser.add_argument(
         '--nldf-feat-name', type=str, default=None,
@@ -267,14 +251,6 @@ def main():
         help='Path to yaml file containing names of datasets to load '
              'along with instructions for loading said datasets.'
     )
-    parser.add_argument(
-        '--extra-dirs', nargs='+', default=None,
-        help='Extra dirs to search for datasets if not found in SAVE_ROOT.'
-    )
-    parser.add_argument(
-        '--functional', type=str, default=None,
-        help='XC functional for reference data, HF for Hartree-Fock.'
-    )
     parser.add_argument('-c', '--density-cutoff', type=float, default=1e-6)
     parser.add_argument('-s', '--seed', help='random seed', default=0, type=int)
     parser.add_argument(
@@ -293,7 +269,7 @@ def main():
              'Negative value means to ignore.'
     )
     parser.add_argument(
-        '--mol-sigma', tpe=float, default=0.03,
+        '--mol-sigma', type=float, default=0.03,
         help='Standard deviation noise parameter for total molecular energy data.'
     )
     parser.add_argument('--scale-override', type=float, default=None)
@@ -323,12 +299,7 @@ def main():
         '--debug-spline', type=str, default=None,
         help='Load joblib and print debug'
     )
-    parser.add_argument(
-        '--save-dir', default=None, type=str,
-        help='Override default save directory for features.'
-    )
     args = parser.parse_args()
-    settings = parse_settings(args)
     if args.debug_model is not None:
         args.debug_model = load(args.debug_model)
     if args.debug_spline is not None:
@@ -339,7 +310,10 @@ def main():
     with open(args.kernel_plan_file, 'r') as f:
         kernel_plans = yaml.load(f, Loader=yaml.CLoader)
 
+    np.random.seed(args.seed)
     datasets_list = list(data_settings['systems'].keys())
+    settings = parse_settings(datasets_list[0], data_settings, args)
+    print('USPS', settings.get_feat_usps())
 
     Xlist = []
     GXRlist = []
@@ -351,7 +325,7 @@ def main():
         n = data_settings['systems'][dset_name].get('inverse_sampling_density')
         Xlist_tmp, GXOlist_tmp, GXUlist_tmp, y_tmp, dset_ids = \
             parse_dataset_for_ctrl(
-                dset_name, n, args
+                dset_name, n, args, data_settings, settings
             )
         Xlist += Xlist_tmp
         if len(GXOlist_tmp) == len(Xlist_tmp):
@@ -436,7 +410,7 @@ def main():
     for i, fname in enumerate(datasets_list):
         load_orbs = data_settings['systems'][fname].get('load_orbs')
         mol_ids = molid_map[fname]
-        fnames = find_datasets(fname, args)
+        fnames = find_datasets(fname, args, data_settings)
         gpr.store_mol_covs(
             fnames, mol_ids, get_orb_deriv=load_orbs, get_correlation=True
         )
