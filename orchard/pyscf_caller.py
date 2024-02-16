@@ -106,16 +106,30 @@ def setup_calc(atoms, settings):
 
         )
     elif is_cider and (not is_jax):
-        # TODO grid level settings
-        from ciderpress.dft.ri_cider import setup_cider_calc
-        import joblib
-        mlfunc_filename = settings['cider'].pop('mlfunc_filename')
-        calc = setup_cider_calc(
-            mol,
-            joblib.load(mlfunc_filename),
-            spinpol=settings['control']['spinpol'],
-            **(settings['cider']),
-        )
+        if 'use_new_scf' in settings['cider']:
+            use_new = settings['cider'].pop('use_new_scf')
+        else:
+            use_new = False
+        if use_new:
+            from ciderpress.pyscf.dft import make_cider_calc
+            calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
+            mlfunc_filename = settings['cider'].pop('mlfunc_filename')
+            calc = make_cider_calc(
+                calc,
+                mlfunc_filename,
+                **(settings['cider'])
+            )
+        else:
+            # TODO grid level settings
+            from ciderpress.dft.ri_cider import setup_cider_calc
+            import joblib
+            mlfunc_filename = settings['cider'].pop('mlfunc_filename')
+            calc = setup_cider_calc(
+                mol,
+                joblib.load(mlfunc_filename),
+                spinpol=settings['control']['spinpol'],
+                **(settings['cider']),
+            )
     elif (not is_cider) and is_jax:
         from ciderpress.dft.jax_ks import setup_jax_exx_calc
         calc = setup_jax_exx_calc(
