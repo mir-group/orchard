@@ -52,6 +52,36 @@ def _get_name_dict(args):
     }
 
 
+def write_train_analysis(gpr, rxn_id_list, fname='train_analysis.yaml'):
+    K = gpr.Kcov_
+    y = gpr.y_mol_
+    alpha = gpr.alpha_mol_
+    y_pred = K.dot(alpha)
+    dy = y_pred - y
+    rtkd = np.sqrt(np.diag(K))
+    rxn_id_arr = np.array(rxn_id_list)
+    nitems = 20
+    for i, rxn_id in enumerate(rxn_id_list):
+        rel_cov = K[i] / (rtkd * rtkd[i] + 1e-16)
+        #print(rxn_id)
+        inds = np.argsort(np.abs(rel_cov))
+        inds = np.flip(inds)[:nitems]
+        #print(rxn_id_arr[inds])
+        #print(rel_cov[inds])
+        #print(dy[inds])
+        #print()
+    ana_set = {
+        'K': K,
+        'Kfull': gpr.K_,
+        'y_pred': y_pred,
+        'y': y,
+        'alpha': alpha,
+        'rxn_id_list': rxn_id_list,
+    }
+    with open(fname, 'w') as f:
+        yaml.dump(ana_set, f, Dumper=yaml.CDumper)
+
+
 def get_base_path(dset_name, data_settings):
     pathid = data_settings['systems'][dset_name]['path']
     if isinstance(pathid, int):
@@ -90,6 +120,8 @@ def parse_settings(set0, data_settings, args):
     )
     if args.normalizer_file is None:
         settings.assign_reasonable_normalizer()
+        with open('__norms.yaml', 'w') as f:
+            yaml.dump(settings.normalizers, f)
     return settings
 
 
@@ -305,6 +337,11 @@ def main():
         '--debug-spline', type=str, default=None,
         help='Load joblib and print debug'
     )
+    parser.add_argument(
+        '--reload-model', type=str, default=None,
+        help='If path exists, load this model and refit (possibly with new '
+             'weights on datasets) while ignoring other parameters.'
+    )
     args = parser.parse_args()
     if args.debug_model is not None:
         args.debug_model = load(args.debug_model)
@@ -324,105 +361,123 @@ def main():
     print('UEGS', settings.ueg_vector(),
           settings.ueg_vector(with_normalizers=True))
 
-    Xlist = []
-    GXRlist = []
-    GXOlist = []
-    GXUlist = []
-    ylist = []
-    molid_map = {}
-    for dset_name in datasets_list:
-        n = data_settings['systems'][dset_name].get('inverse_sampling_density')
-        Xlist_tmp, GXOlist_tmp, GXUlist_tmp, y_tmp, dset_ids = \
-            parse_dataset_for_ctrl(
-                dset_name, n, args, data_settings, settings
+    reload_bool = args.reload_model is not None and os.path.exists(args.reload_model)
+    if reload_bool:
+        gpr = load(args.reload_model)
+        gpr.default_noise = args.mol_sigma
+        ylist = []
+        molid_map = {}
+        for dset_name in datasets_list:
+            dirnames = find_datasets(dset_name, args, data_settings)
+            with open(os.path.join(dirnames['SL'], '{}_settings.yaml'.format(dset_name)), 'r') as f:
+                settings = yaml.load(f, Loader=yaml.CLoader)
+                mol_ids = settings['MOL_IDS']
+            molid_map[dset_name] = mol_ids
+    else:
+        Xlist = []
+        GXRlist = []
+        GXOlist = []
+        GXUlist = []
+        ylist = []
+        molid_map = {}
+        for dset_name in datasets_list:
+            n = data_settings['systems'][dset_name].get('inverse_sampling_density')
+            Xlist_tmp, GXOlist_tmp, GXUlist_tmp, y_tmp, dset_ids = \
+                parse_dataset_for_ctrl(
+                    dset_name, n, args, data_settings, settings
+                )
+            Xlist += Xlist_tmp
+            if len(GXOlist_tmp) == len(Xlist_tmp):
+                GXRlist += Xlist_tmp
+                GXOlist += GXOlist_tmp
+                GXUlist += GXUlist_tmp
+            ylist += y_tmp
+            molid_map[dset_name] = dset_ids
+        yctrl = np.concatenate(ylist, axis=0)
+
+        kernels = []
+        args.plan_files = []
+        mapping_plans = []
+        for plan in kernel_plans:
+            plan_file = plan.pop('plan_file')
+            plan_module = get_plan_module(plan_file)
+            args.plan_files.append(plan_file)
+            feature_list = FeatureList.load(plan['feature_list'])
+            ctrl_tol = plan.get('ctrl_tol') or 1e-5
+            ctrl_nmax = plan.get('ctrl_nmax')
+            kernels.append(DFTKernel(
+                None,
+                feature_list,
+                plan['mode'],
+                BASELINE_CODES[plan['multiplicative_baseline']],
+                additive_baseline=BASELINE_CODES.get(plan['additive_baseline']),
+                ctrl_tol=ctrl_tol,
+                ctrl_nmax=ctrl_nmax,
+                component=plan.get('component')
+            ))
+            if 'lscale_override' in plan:
+                lscale = np.array(plan.pop('lscale_override'))
+                val_pca = None
+                deriv_pca = None
+            else:
+                X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
+                DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
+                DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
+                val_pca = analyze_cov(X1)
+                analyze_cov(DXO1, avg_and_std=val_pca[:2])
+                analyze_cov(DXU1, avg_and_std=val_pca[:2])
+                deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
+                lscale = np.std(X1, axis=0)
+                print('SHAPES', X1.shape, yctrl.shape)
+            kernel = plan_module.get_kernel(
+                natural_scale=(np.var(yctrl) if args.scale_override is None
+                               else args.scale_override),
+                natural_lscale=lscale,
+                scale_factor=args.scale_mul,
+                lscale_factor=args.length_scale_mul,
+                val_pca=val_pca,
+                deriv_pca=deriv_pca,
             )
-        Xlist += Xlist_tmp
-        if len(GXOlist_tmp) == len(Xlist_tmp):
-            GXRlist += Xlist_tmp
-            GXOlist += GXOlist_tmp
-            GXUlist += GXUlist_tmp
-        ylist += y_tmp
-        molid_map[dset_name] = dset_ids
-    yctrl = np.concatenate(ylist, axis=0)
+            kernels[-1].set_kernel(kernel)
+            if 'mapping_plan' in dir(plan_module):
+                mfunc = plan_module.mapping_plan
+            else:
+                mfunc = None
+            mapping_plans.append(mfunc)
 
-    kernels = []
-    args.plan_files = []
-    mapping_plans = []
-    for plan in kernel_plans:
-        plan_file = plan.pop('plan_file')
-        plan_module = get_plan_module(plan_file)
-        args.plan_files.append(plan_file)
-        feature_list = FeatureList.load(plan['feature_list'])
-        ctrl_tol = plan.get('ctrl_tol') or 1e-5
-        ctrl_nmax = plan.get('ctrl_nmax')
-        kernels.append(DFTKernel(
-            None,
-            feature_list,
-            plan['mode'],
-            BASELINE_CODES[plan['multiplicative_baseline']],
-            additive_baseline=BASELINE_CODES.get(plan['additive_baseline']),
-            ctrl_tol=ctrl_tol,
-            ctrl_nmax=ctrl_nmax,
-            component=plan.get('component')
-        ))
-        if 'lscale_override' in plan:
-            lscale = np.array(plan.pop('lscale_override'))
-            val_pca = None
-            deriv_pca = None
-        else:
-            X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
-            DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
-            DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
-            val_pca = analyze_cov(X1)
-            analyze_cov(DXO1, avg_and_std=val_pca[:2])
-            analyze_cov(DXU1, avg_and_std=val_pca[:2])
-            deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
-            lscale = np.std(X1, axis=0)
-            print('SHAPES', X1.shape, yctrl.shape)
-        kernel = plan_module.get_kernel(
-            natural_scale=(np.var(yctrl) if args.scale_override is None
-                           else args.scale_override),
-            natural_lscale=lscale,
-            scale_factor=args.scale_mul,
-            lscale_factor=args.length_scale_mul,
-            val_pca=val_pca,
-            deriv_pca=deriv_pca,
+        gpr = MOLGP(
+            kernels,
+            settings,
+            libxc_baseline=args.libxc_baseline,
+            default_noise=args.mol_sigma,
         )
-        kernels[-1].set_kernel(kernel)
-        if 'mapping_plan' in dir(plan_module):
-            mfunc = plan_module.mapping_plan
-        else:
-            mfunc = None
-        mapping_plans.append(mfunc)
+        gpr.args = args
 
-    gpr = MOLGP(
-        kernels,
-        settings,
-        libxc_baseline=args.libxc_baseline,
-        default_noise=args.mol_sigma,
-    )
-    gpr.args = args
-
-    gpr.set_control_points(Xlist, reduce=True)
-    print('CTRL SIZE', kernels[-1].X1ctrl.shape)
+        gpr.set_control_points(Xlist, reduce=True)
+        print('CTRL SIZE', [k.X1ctrl.shape for k in kernels])
 
     rxn_list = []
     rxn_id_list = []
     rxn_ids = list(data_settings['reactions'].keys())
     for i, rxn_id in enumerate(rxn_ids):
         rxn_dict = load_rxns(rxn_id)
-        mode = data_settings['reactions'][rxn_id].get('mode') or 0
+        rxn_settings = data_settings['reactions'][rxn_id]
+        mode = rxn_settings.get('mode') or 0
         for k, v in list(rxn_dict.items()):
+            v.update(rxn_settings)
             rxn_id_list.append(k)
             rxn_list.append((mode, v))
 
-    for i, fname in enumerate(datasets_list):
-        load_orbs = data_settings['systems'][fname].get('load_orbs')
-        mol_ids = molid_map[fname]
-        fnames = find_datasets(fname, args, data_settings)
-        gpr.store_mol_covs(
-            fnames, mol_ids, get_orb_deriv=load_orbs, get_correlation=True
-        )
+    if reload_bool:
+        gpr.reset_reactions()
+    else:
+        for i, fname in enumerate(datasets_list):
+            load_orbs = data_settings['systems'][fname].get('load_orbs')
+            mol_ids = molid_map[fname]
+            fnames = find_datasets(fname, args, data_settings)
+            gpr.store_mol_covs(
+                fnames, mol_ids, get_orb_deriv=load_orbs, get_correlation=True
+            )
 
     gpr.add_reactions(rxn_list)
 

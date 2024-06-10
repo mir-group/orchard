@@ -114,11 +114,13 @@ def setup_calc(atoms, settings):
             from ciderpress.pyscf.dft import make_cider_calc
             calc = dft.UKS(mol) if settings['control']['spinpol'] else dft.RKS(mol)
             mlfunc_filename = settings['cider'].pop('mlfunc_filename')
+            settings['calc'].pop('xc', None)
             calc = make_cider_calc(
                 calc,
                 mlfunc_filename,
                 **(settings['cider'])
             )
+
         else:
             # TODO grid level settings
             from ciderpress.dft.ri_cider import setup_cider_calc

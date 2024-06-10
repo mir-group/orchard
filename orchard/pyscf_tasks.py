@@ -31,7 +31,6 @@ DEFAULT_PYSCF_SETTINGS = {
         'verbose': 3,
     },
     'calc' : {
-        'xc': 'PBE',
     },
     'grids': {},
 }
@@ -193,7 +192,7 @@ class SaveSCFResults(FiretaskBase):
 class RunAnalysis(FiretaskBase):
 
     required_params = ['save_root_dir', 'system_id']
-    optional_params = ['grids_level', 'cider_kwargs_and_version']
+    optional_params = ['grids_level', 'cider_kwargs_and_version', 'omegas']
 
     def get_cider_features(self, analyzer, restricted):
         from ciderpress.density import get_exchange_descriptors2
@@ -219,6 +218,13 @@ class RunAnalysis(FiretaskBase):
             'analysis_L{}.hdf5'.format(analyzer.grids_level))
         if self.get('cider_kwargs_and_version') is not None:
             self.get_cider_features(analyzer, analyzer.dm.ndim==2)
+        if self.get('omegas') is not None:
+            from collections.abc import Iterable
+            omegas = self['omegas']
+            if not isinstance(omegas, Iterable):
+                omegas = [omegas]
+            for omega in omegas:
+                analyzer.get_ee_energy_density_rs(omega)
         analyzer.dump(save_file)
 
         return FWAction(stored_data={'save_dir': save_dir})

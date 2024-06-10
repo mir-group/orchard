@@ -189,6 +189,29 @@ def get_subdb_mae(subdb, xc, comp_xc=None, data_names=None,
         return output[1], output[4]
     return output[1]
 
+def get_band_gap(hdf5file):
+    from pyscf import lib
+    print(hdf5file)
+    mo_energy = lib.chkfile.load(hdf5file, 'calc/mo_energy')
+    mo_occ = lib.chkfile.load(hdf5file, 'calc/mo_occ')
+    moe = np.asarray(mo_energy)
+    moo = np.asarray(mo_occ)
+    homo = np.max(moe[moo > 1e-10])
+    lumo = np.min(moe[moo < 1e-10])
+    return lumo - homo
+
+def get_subdb_gaps(subdb, xc, basis):
+    eval_file = 'GMTKN55/{}.list'.format(subdb)
+    eval_file = os.path.join(ACCDB_ROOT, 'Databases/GMTKN', eval_file)
+    with open(eval_file, 'r') as f:
+        mol_ids = ['GMTKN55/{}'.format(l.strip()) for l in f.readlines()]
+    gaps = {}
+    for mol_id in mol_ids:
+        dname = get_save_dir(MLDFTDB_ROOT, 'KS', basis, mol_id, xc)
+        dname = os.path.join(dname, 'data.hdf5')
+        gaps[mol_id] = get_band_gap(dname)
+    return gaps
+
 def get_weighted_loss(subdb, xc, comp_xc=None, data_names=None, return_count=False, ae=False):
     eval_file = 'GMTKN55/EVAL_{}.yaml'.format(subdb)
     if ae:

@@ -3,7 +3,7 @@ from orchard.pyscf_tasks import StoreFeatures2
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
 from ciderpress.pyscf.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from ciderpress.new_dft.settings import SemilocalSettings, NLDFSettings, \
-    FracLaplSettings, SADMSettings, HybridSettings
+    FracLaplSettings, SDMXBaseSettings, HybridSettings
 from ciderpress.pyscf.descriptors import get_descriptors
 from pyscf.lib import chkfile
 import numpy as np
@@ -31,7 +31,7 @@ def get_feat_type(settings):
         return 'NLDF'
     elif isinstance(settings, FracLaplSettings):
         return 'NLOF'
-    elif isinstance(settings, SADMSettings):
+    elif isinstance(settings, SDMXBaseSettings):
         return 'SDMX'
     elif isinstance(settings, HybridSettings):
         return 'HYB'
