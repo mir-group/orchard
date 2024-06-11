@@ -5,9 +5,9 @@ import os, time
 import numpy as np
 from ciderpress.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
 from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
-from ciderpress.density import get_exchange_descriptors, LDA_FACTOR, GG_AMIN
+from ciderpress.density import get_exchange_descriptors, LDA_FACTOR, GG_AMIN, DESC_VERSION_LIST
 from ciderpress.data import get_unique_coord_indexes_spherical, get_total_weights_spherical
-from ciderpress.descriptors import get_descriptors
+from ciderpress.descriptors import get_descriptors, FAST_DESC_VERSION_LIST
 import logging
 import yaml
 from argparse import ArgumentParser
@@ -55,13 +55,13 @@ def compile_dataset_old(DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
             logging.info('Index scanning time {}'.format(end - start))
         start = time.monotonic()
         if restricted:
-            descriptor_data = get_exchange_descriptors2(
+            descriptor_data = get_exchange_descriptors(
                 analyzer, restricted=True, version=version,
                 **gg_kwargs
             )
         else:
             descriptor_data_u, descriptor_data_d = \
-                              get_exchange_descriptors2(
+                              get_exchange_descriptors(
                                 analyzer, restricted=False, version=version,
                                 **gg_kwargs
                               )
@@ -191,9 +191,9 @@ def compile_single_system(save_file, analyzer_file, version,
         data['xc_orig'] = analyzer.get('xc_orig')
         data['exc_orig'] = analyzer.get('exc_orig')
         data['e_tot_orig'] = analyzer.get('e_tot_orig')
-    basedir = os.path.basename(save_file)
-    if not os.path.exists(basedir):
-        os.makedirs(basedir, exist_ok=True)
+    dirname = os.path.dirname(os.path.abspath(save_file))
+    if not os.path.exists(dirname):
+        os.makedirs(dirname, exist_ok=True)
     chkfile.dump(save_file, 'train_data', data)
 
 
@@ -209,8 +209,9 @@ def intk_to_strk(d):
 def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BASIS,
                     version='b', sparse_level=None, analysis_level=1,
                     save_gap_data=False, save_baselines=True,
-                    make_fws=False, **gg_kwargs):
-    if version not in ['b', 'd', 'l']:
+                    make_fws=False, skip_existing=False, save_dir=None,
+                    **gg_kwargs):
+    if version not in FAST_DESC_VERSION_LIST:
         raise ValueError('Unsupported version for new dataset module')
 
     if save_gap_data:
@@ -227,10 +228,13 @@ def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BAS
     else:
         sparse_tag = '_{}_{}'.format(level[0], level[1])
 
-    save_dir = os.path.join(
-        SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
-        version+sparse_tag, DESC_NAME,
-    ) 
+    if save_dir is None:
+        save_dir = os.path.join(
+            SAVE_ROOT, 'DATASETS', FUNCTIONAL, BASIS,
+            version+sparse_tag, DESC_NAME,
+        )
+    else:
+        save_dir = os.path.join(save_dir, DESC_NAME)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
     settings = {
@@ -258,6 +262,9 @@ def compile_dataset(DESC_NAME, DATASET_NAME, MOL_IDS, SAVE_ROOT, FUNCTIONAL, BAS
         logging.info('Computing descriptors for {}'.format(MOL_ID))
         data_dir = get_save_dir(SAVE_ROOT, 'KS', BASIS, MOL_ID, FUNCTIONAL)
         save_file = os.path.join(save_dir, MOL_ID + '.hdf5')
+        if os.path.exists(save_file) and skip_existing:
+            print('Already exists, skipping:', MOL_ID)
+            continue
         analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
         args = (save_file, analyzer_file, version,
                 sparse_level, orbs, save_baselines, gg_kwargs)
@@ -299,10 +306,14 @@ def main():
                         help='use a sparse grid to compute features, etc. If set, recomputes data.')
     parser.add_argument('--make-fws', action='store_true')
     parser.add_argument('--save-gap-data', action='store_true')
+    parser.add_argument('--skip-existing', action='store_true',
+                        help='skip system if save_file exists already')
+    parser.add_argument('--save-dir', default=None, type=str,
+                        help='override default save directory for features')
     args = parser.parse_args()
 
     version = args.version.lower()
-    if version not in ['a', 'b', 'c', 'd', 'e', 'f']:
+    if version not in DESC_VERSION_LIST:
         raise ValueError('Unsupported descriptor set')
 
     mol_ids = load_mol_ids(args.mol_id_file)
@@ -335,6 +346,8 @@ def main():
         version=version,
         analysis_level=args.analysis_level, sparse_level=sparse_level,
         save_gap_data=args.save_gap_data, make_fws=args.make_fws,
+        skip_existing=args.skip_existing,
+        save_dir=args.save_dir,
         **gg_kwargs
     )
     if args.make_fws:

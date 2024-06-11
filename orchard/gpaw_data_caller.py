@@ -82,7 +82,6 @@ def intk_to_strk(d):
 def save_features(save_file, data_dir, calc, version, gg_kwargs,
                   save_gap_data=False):
     from ciderpress.gpaw.analysis import get_features
-    print('START FEAT')
     with paropen(os.path.join(data_dir, 'exx_data.yaml'), 'r') as f:
         data = yaml.load(f, Loader=yaml.CLoader)
     data.pop('kpts')
@@ -115,8 +114,7 @@ def save_features(save_file, data_dir, calc, version, gg_kwargs,
         'wt': all_wt,
         'nspin': nspin,
     })
-    print('WRITE FEAT')
-    data['val'] = data['exx'] * all_wt / (nspin * all_wt.sum())
+    data['val'] = data['exx'] * np.ones_like(all_wt) / (nspin * all_wt.sum())
     if nspin == 2:
         data['val'] = np.stack([data['val'], data['val']]) # sums to exx
     else:
@@ -129,7 +127,6 @@ def save_features(save_file, data_dir, calc, version, gg_kwargs,
 
 
 def call_gpaw():
-    print('CALL GPAW')
     with paropen(sys.argv[1], 'r') as f:
         settings = yaml.load(f, Loader=yaml.Loader)
 
