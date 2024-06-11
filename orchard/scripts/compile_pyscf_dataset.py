@@ -77,6 +77,9 @@ def compile_single_system(
         spinpol = False
     if settings == 'l':
         values = analyzer.get('ex_energy_density')
+        # TODO need to be able to generate reference data for range-separated exchange
+        # This function will fetch the range-separated exact exchange from the analysis
+        # values = analyzer.get_rs(omega)
         weights = analyzer.grids.weights
         coords = analyzer.grids.coords
         if spinpol:
@@ -92,6 +95,10 @@ def compile_single_system(
         }
         if orbs is not None:
             data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
+            # TODO need to be able to generate reference data for range-separated exchange
+            # This function will compute the contribution of short and long-range exchange to VXC
+            # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('SR_HF(omega)', orbs))
+            # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('LR_HF(0.11)', orbs))
             data['drho_data'] = intk_to_strk(ddesc)
             data['eigvals'] = intk_to_strk(eigvals)
         if save_baselines:
