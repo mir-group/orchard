@@ -27,11 +27,11 @@ from argparse import ArgumentParser
 
 import numpy as np
 import yaml
+from ciderpress.dft.settings import LDA_FACTOR, FeatureSettings
+from ciderpress.dft.transform_data import FeatureList
 from ciderpress.models.baselines import BASELINE_CODES
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.train import MOLGP, strk_to_tuplek
-from ciderpress.new_dft.settings import LDA_FACTOR, FeatureSettings
-from ciderpress.new_dft.transform_data import FeatureList
 from joblib import dump, load
 
 from orchard.workflow_utils import load_rxns

@@ -25,7 +25,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import yaml
-from ciderpress.new_dft.settings import (
+from ciderpress.dft.settings import (
     FracLaplSettings,
     HybridSettings,
     NLDFSettings,
