@@ -1,3 +1,8 @@
+# NOTE: Code originally from https://gitlab.com/kaitrepte/vcml_data/
+# See EXTERNAL_LICENSES/vcml_data/LICENSE for the license info
+# that applies to this code and to the data files in this directory,
+# which are all licensed under Creative Commons 4.0.
+
 import os
 import numpy
 import matplotlib.pyplot as plt
@@ -446,6 +451,8 @@ class values():
             self.label = 'VCML-v'
         idx = get_idx(functional)   # Get the index corresponding to the position of th evalues in file 'all_values.dat'
 
+        # NOTE line changed from original
+        # ffile = open('all_values.dat','r')
         ffile = open(os.path.join(os.path.dirname(__file__), 'all_values.dat'), 'r')
         lines = ffile.readlines()
         ffile.close()
