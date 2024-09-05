@@ -308,7 +308,7 @@ def main():
     )
     parser.add_argument(
         '--mol-sigma', type=float, default=0.03,
-        help='Standard deviation noise parameter for total molecular energy data.'
+        help='Standard deviation noise parameter for total molecular energy data, in Ha.'
     )
     parser.add_argument('--scale-override', type=float, default=None)
     parser.add_argument('--scale-mul', type=float, default=1.0)
