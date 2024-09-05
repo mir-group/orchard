@@ -1,15 +1,36 @@
+#!/usr/bin/env python
+# orchard: Utilities to training and analyzing machine learning-based density functionals
+# Copyright (C) 2024 The President and Fellows of Harvard College
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>
+#
+# Author: Kyle Bystrom <kylebystrom@gmail.com>
+#
+
 import os
+
 import yaml
 from ase import Atoms
 
-config_file = os.path.expanduser('~/.orchard_config.yaml')
+config_file = os.path.expanduser("~/.orchard_config.yaml")
 if os.path.exists(config_file):
     with open(config_file, "r") as f:
         settings = yaml.load(f, Loader=yaml.Loader)
-    MLDFTDB_ROOT = settings.get('MLDFTDB_ROOT')
-    ACCDB_ROOT = settings.get('ACCDB_ROOT')
-    VCML_ROOT = settings.get('VCML_ROOT')
-    RXN_ROOT = settings.get('RXN_ROOT')
+    MLDFTDB_ROOT = settings.get("MLDFTDB_ROOT")
+    ACCDB_ROOT = settings.get("ACCDB_ROOT")
+    VCML_ROOT = settings.get("VCML_ROOT")
+    RXN_ROOT = settings.get("RXN_ROOT")
 else:
     MLDFTDB_ROOT = None
     ACCDB_ROOT = None
@@ -17,26 +38,31 @@ else:
     RXN_ROOT = None
 SAVE_ROOT = MLDFTDB_ROOT
 
+
 def get_functional_db_name(functional):
-    functional = functional.replace(',', '_')
-    functional = functional.replace(' ', '_')
+    functional = functional.replace(",", "_")
+    functional = functional.replace(" ", "_")
     functional = functional.upper()
     return functional
 
+
 def get_save_dir(root, calc_type, basis, mol_id, functional):
     if functional is not None:
-        calc_type = calc_type + '/' + get_functional_db_name(functional)
+        calc_type = calc_type + "/" + get_functional_db_name(functional)
     return os.path.join(root, calc_type, basis, mol_id)
 
+
 def load_mol_ids(mol_id_file):
-    if not mol_id_file.endswith('.yaml'):
-        mol_id_file += '.yaml'
-    with open(mol_id_file, 'r') as f:
+    if not mol_id_file.endswith(".yaml"):
+        mol_id_file += ".yaml"
+    with open(mol_id_file, "r") as f:
         contents = yaml.load(f, Loader=yaml.Loader)
-    if contents.get('prefix') is not None:
-        contents['mols'] = [os.path.join(contents['prefix'], sysid) \
-                            for sysid in contents['mols']]
-    return contents['mols']
+    if contents.get("prefix") is not None:
+        contents["mols"] = [
+            os.path.join(contents["prefix"], sysid) for sysid in contents["mols"]
+        ]
+    return contents["mols"]
+
 
 def _append_prefix(prefix, sysid):
     if isinstance(sysid, tuple):
@@ -45,42 +71,44 @@ def _append_prefix(prefix, sysid):
     assert isinstance(sysid, str)
     return os.path.join(prefix, sysid)
 
+
 def load_rxns(rxn_list_id, rxndir=None):
     if rxndir is None:
         rxndir = RXN_ROOT
     if rxndir is None:
-        raise ValueError('Must provide rxndir or set RXN_ROOT in config')
-    rxnfile = os.path.join(rxndir, rxn_list_id) + '.yaml'
-    with open(rxnfile, 'r') as f:
+        raise ValueError("Must provide rxndir or set RXN_ROOT in config")
+    rxnfile = os.path.join(rxndir, rxn_list_id) + ".yaml"
+    with open(rxnfile, "r") as f:
         contents = yaml.load(f, Loader=yaml.Loader)
-    if contents.get('prefix') is not None:
-        prefix = contents.pop('prefix')
+    if contents.get("prefix") is not None:
+        prefix = contents.pop("prefix")
         for k, v in contents.items():
-            contents[k]['structs'] = [_append_prefix(prefix, sysid) \
-                                      for sysid in contents[k]['structs']]
+            contents[k]["structs"] = [
+                _append_prefix(prefix, sysid) for sysid in contents[k]["structs"]
+            ]
     return contents
-        
+
 
 def read_accdb_structure(struct_id):
-    fname = '{}.xyz'.format(os.path.join(ACCDB_ROOT, 'Geometries', struct_id))
-    with open(fname, 'r') as f:
-        #print(fname)
+    fname = "{}.xyz".format(os.path.join(ACCDB_ROOT, "Geometries", struct_id))
+    with open(fname, "r") as f:
+        # print(fname)
         lines = f.readlines()
         natom = int(lines[0])
         charge_and_spin = lines[1].split()
-        charge = int(charge_and_spin[0].strip().strip(','))
-        spin = int(charge_and_spin[1].strip().strip(',')) - 1
+        charge = int(charge_and_spin[0].strip().strip(","))
+        spin = int(charge_and_spin[1].strip().strip(",")) - 1
         symbols = []
         coords = []
         for i in range(natom):
-            line = lines[2+i]
+            line = lines[2 + i]
             symbol, x, y, z = line.split()
             if symbol.isdigit():
                 symbol = int(symbol)
             else:
                 symbol = symbol[0].upper() + symbol[1:].lower()
             symbols.append(symbol)
-            coords.append([x,y,z])
-        struct = Atoms(symbols, positions = coords)
-        #print(charge, spin, struct)
-    return struct, os.path.join('ACCDB', struct_id), spin, charge
+            coords.append([x, y, z])
+        struct = Atoms(symbols, positions=coords)
+        # print(charge, spin, struct)
+    return struct, os.path.join("ACCDB", struct_id), spin, charge

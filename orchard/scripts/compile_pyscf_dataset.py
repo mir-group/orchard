@@ -1,16 +1,43 @@
-import os
-from orchard.pyscf_tasks import StoreFeatures2
-from orchard.workflow_utils import get_save_dir, SAVE_ROOT, load_mol_ids
-from ciderpress.pyscf.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
-from ciderpress.new_dft.settings import SemilocalSettings, NLDFSettings, \
-    FracLaplSettings, SDMXBaseSettings, HybridSettings
-from ciderpress.pyscf.descriptors import get_descriptors
-from pyscf.lib import chkfile
-import numpy as np
+#!/usr/bin/env python
+# orchard: Utilities to training and analyzing machine learning-based density functionals
+# Copyright (C) 2024 The President and Fellows of Harvard College
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>
+#
+# Author: Kyle Bystrom <kylebystrom@gmail.com>
+#
+
 import logging
-import yaml
+import os
 import time
 from argparse import ArgumentParser
+
+import numpy as np
+import yaml
+from ciderpress.dft.settings import (
+    FracLaplSettings,
+    HybridSettings,
+    NLDFSettings,
+    SDMXBaseSettings,
+    SemilocalSettings,
+)
+from ciderpress.pyscf.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
+from ciderpress.pyscf.descriptors import get_descriptors
+from pyscf.lib import chkfile
+
+from orchard.pyscf_tasks import StoreFeatures2
+from orchard.workflow_utils import SAVE_ROOT, get_save_dir, load_mol_ids
 
 
 def intk_to_strk(d):
@@ -23,43 +50,47 @@ def intk_to_strk(d):
 
 
 def get_feat_type(settings):
-    if settings == 'l':
-        return 'REF'
+    if settings == "l":
+        return "REF"
     elif isinstance(settings, SemilocalSettings):
-        return 'SL'
+        return "SL"
     elif isinstance(settings, NLDFSettings):
-        return 'NLDF'
+        return "NLDF"
     elif isinstance(settings, FracLaplSettings):
-        return 'NLOF'
+        return "NLOF"
     elif isinstance(settings, SDMXBaseSettings):
-        return 'SDMX'
+        return "SDMX"
     elif isinstance(settings, HybridSettings):
-        return 'HYB'
+        return "HYB"
     else:
         raise ValueError
 
 
 def compile_single_system(
-        settings, save_file, analyzer_file, sparse_level, orbs, save_baselines
+    settings, save_file, analyzer_file, sparse_level, orbs, save_baselines
 ):
     start = time.monotonic()
     analyzer = ElectronAnalyzer.load(analyzer_file)
     if sparse_level is not None:
         old_analyzer = analyzer
-        Analyzer = UHFAnalyzer if analyzer.atype == 'UHF' else RHFAnalyzer
-        analyzer = Analyzer(analyzer.mol, analyzer.dm, grids_level=sparse_level,
-                            mo_occ=old_analyzer.mo_occ,
-                            mo_coeff=old_analyzer.mo_coeff,
-                            mo_energy=old_analyzer.mo_energy)
-        if 'e_tot_orig' in old_analyzer._data:
-            analyzer._data['xc_orig'] = old_analyzer.get('xc_orig')
-            analyzer._data['exc_orig'] = old_analyzer.get('exc_orig')
-            analyzer._data['e_tot_orig'] = old_analyzer.get('e_tot_orig')
+        Analyzer = UHFAnalyzer if analyzer.atype == "UHF" else RHFAnalyzer
+        analyzer = Analyzer(
+            analyzer.mol,
+            analyzer.dm,
+            grids_level=sparse_level,
+            mo_occ=old_analyzer.mo_occ,
+            mo_coeff=old_analyzer.mo_coeff,
+            mo_energy=old_analyzer.mo_energy,
+        )
+        if "e_tot_orig" in old_analyzer._data:
+            analyzer._data["xc_orig"] = old_analyzer.get("xc_orig")
+            analyzer._data["exc_orig"] = old_analyzer.get("exc_orig")
+            analyzer._data["e_tot_orig"] = old_analyzer.get("e_tot_orig")
         analyzer.perform_full_analysis()
     else:
         analyzer.get_rho_data()
     end = time.monotonic()
-    logging.info('Analyzer load time {}'.format(end - start))
+    logging.info("Analyzer load time {}".format(end - start))
 
     start = time.monotonic()
     desc = get_descriptors(analyzer, settings, orbs=orbs)
@@ -69,14 +100,14 @@ def compile_single_system(
         ddesc = None
         eigvals = None
     end = time.monotonic()
-    logging.info('Get descriptor time {}'.format(end - start))
+    logging.info("Get descriptor time {}".format(end - start))
 
     if isinstance(analyzer, UHFAnalyzer):
         spinpol = True
     else:
         spinpol = False
-    if settings == 'l':
-        values = analyzer.get('ex_energy_density')
+    if settings == "l":
+        values = analyzer.get("ex_energy_density")
         # TODO need to be able to generate reference data for range-separated exchange
         # This function will fetch the range-separated exact exchange from the analysis
         # values = analyzer.get_rs(omega)
@@ -87,94 +118,99 @@ def compile_single_system(
         else:
             values = values[np.newaxis, :]
         data = {
-            'coord' : coords,
-            'nspin' : 2 if spinpol else 1,
-            'rho_data' : desc,
-            'val' : values,
-            'wt' : weights
+            "coord": coords,
+            "nspin": 2 if spinpol else 1,
+            "rho_data": desc,
+            "val": values,
+            "wt": weights,
         }
         if orbs is not None:
-            data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
+            data["dval"] = intk_to_strk(analyzer.calculate_vxc_on_mo("HF", orbs))
             # TODO need to be able to generate reference data for range-separated exchange
             # This function will compute the contribution of short and long-range exchange to VXC
             # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('SR_HF(omega)', orbs))
             # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('LR_HF(0.11)', orbs))
-            data['drho_data'] = intk_to_strk(ddesc)
-            data['eigvals'] = intk_to_strk(eigvals)
+            data["drho_data"] = intk_to_strk(ddesc)
+            data["eigvals"] = intk_to_strk(eigvals)
         if save_baselines:
-            data['xc_orig'] = analyzer.get('xc_orig')
-            data['exc_orig'] = analyzer.get('exc_orig')
-            data['e_tot_orig'] = analyzer.get('e_tot_orig')
+            data["xc_orig"] = analyzer.get("xc_orig")
+            data["exc_orig"] = analyzer.get("exc_orig")
+            data["e_tot_orig"] = analyzer.get("e_tot_orig")
     else:
         data = {
-            'desc' : desc,
+            "desc": desc,
         }
         if orbs is not None:
-            data['ddesc'] = intk_to_strk(ddesc)
+            data["ddesc"] = intk_to_strk(ddesc)
     dirname = os.path.dirname(os.path.abspath(save_file))
     if not os.path.exists(dirname):
         os.makedirs(dirname, exist_ok=True)
-    chkfile.dump(save_file, 'train_data', data)
+    chkfile.dump(save_file, "train_data", data)
 
 
 def compile_dataset(
-        feat_settings,
-        feat_name,
-        dataset_name,
-        mol_id_list,
-        save_root,
-        functional,
-        basis,
-        sparse_level=None,
-        analysis_level=1,
-        save_gap_data=False,
-        save_baselines=True,
-        make_fws=False,
-        skip_existing=False,
-        save_dir=None,
+    feat_settings,
+    feat_name,
+    dataset_name,
+    mol_id_list,
+    save_root,
+    functional,
+    basis,
+    sparse_level=None,
+    analysis_level=1,
+    save_gap_data=False,
+    save_baselines=True,
+    make_fws=False,
+    skip_existing=False,
+    save_dir=None,
 ):
     if save_gap_data:
-        orbs = {'O': [0], 'U': [0]}
+        orbs = {"O": [0], "U": [0]}
     else:
         orbs = None
     feat_type = get_feat_type(feat_settings)
     if save_dir is None:
         save_dir = os.path.join(
-            save_root, 'DATASETS', functional,
-            basis, feat_type, feat_name
+            save_root, "DATASETS", functional, basis, feat_type, feat_name
         )
     else:
         save_dir = os.path.join(save_dir, feat_type, feat_name)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
     settings = {
-        'DATASET_NAME'  : dataset_name,
-        'FEAT_NAME'     : feat_name,
-        'MOL_IDS'       : mol_id_list,
-        'SAVE_ROOT'     : save_root,
-        'FUNCTIONAL'    : functional,
-        'BASIS'         : basis,
-        'FEAT_SETTINGS' : feat_settings,
+        "DATASET_NAME": dataset_name,
+        "FEAT_NAME": feat_name,
+        "MOL_IDS": mol_id_list,
+        "SAVE_ROOT": save_root,
+        "FUNCTIONAL": functional,
+        "BASIS": basis,
+        "FEAT_SETTINGS": feat_settings,
     }
     print(save_dir, save_root, feat_name)
-    settings_fname = '{}_settings.yaml'.format(dataset_name)
+    settings_fname = "{}_settings.yaml".format(dataset_name)
     print(os.path.join(save_dir, settings_fname))
-    with open(os.path.join(save_dir, settings_fname), 'w') as f:
+    with open(os.path.join(save_dir, settings_fname), "w") as f:
         yaml.dump(settings, f)
 
     fwlist = {}
     for mol_id in mol_id_list:
-        logging.info('Computing descriptors for {}'.format(mol_id))
-        data_dir = get_save_dir(save_root, 'KS', basis, mol_id, functional)
-        save_file = os.path.join(save_dir, mol_id + '.hdf5')
+        logging.info("Computing descriptors for {}".format(mol_id))
+        data_dir = get_save_dir(save_root, "KS", basis, mol_id, functional)
+        save_file = os.path.join(save_dir, mol_id + ".hdf5")
         if os.path.exists(save_file) and skip_existing:
-            print('Already exists, skipping:', mol_id)
+            print("Already exists, skipping:", mol_id)
             continue
-        analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
-        args = [feat_settings, save_file, analyzer_file,
-                sparse_level, orbs, save_baselines]
+        analyzer_file = data_dir + "/analysis_L{}.hdf5".format(analysis_level)
+        args = [
+            feat_settings,
+            save_file,
+            analyzer_file,
+            sparse_level,
+            orbs,
+            save_baselines,
+        ]
         if make_fws:
-            fwname = 'feature_{}_{}'.format(feat_name, mol_id)
+            fwname = "feature_{}_{}".format(feat_name, mol_id)
             args[0] = yaml.dump(args[0], Dumper=yaml.CDumper)
             fwlist[fwname] = StoreFeatures2(args=args)
         else:
@@ -184,69 +220,86 @@ def compile_dataset(
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    m_desc = 'Compile dataset of XC descriptors'
+    m_desc = "Compile dataset of XC descriptors"
     parser = ArgumentParser(description=m_desc)
     parser.add_argument(
-        'mol_id_file', type=str,
-        help='yaml file from whcih to read mol_ids to parse'
+        "mol_id_file", type=str, help="yaml file from whcih to read mol_ids to parse"
     )
     parser.add_argument(
-        'feat_name', type=str,
-        help='Name of the feature set being generated, used to make '
-             'save directory for generated data.'
+        "feat_name",
+        type=str,
+        help="Name of the feature set being generated, used to make "
+        "save directory for generated data.",
     )
     parser.add_argument(
-        'basis', metavar='basis', type=str,
-        help='Basis set that was used for the DFT calculations'
+        "basis",
+        metavar="basis",
+        type=str,
+        help="Basis set that was used for the DFT calculations",
     )
     parser.add_argument(
-        '--settings-file', metavar='settings_file', type=str, default=None,
+        "--settings-file",
+        metavar="settings_file",
+        type=str,
+        default=None,
         help="Path to a yaml file containing a serialized FeatureSettings "
-             "class. If not provided, generates the reference data "
-             "(i.e. semilocal density, EXX and XC reference, etc.)"
+        "class. If not provided, generates the reference data "
+        "(i.e. semilocal density, EXX and XC reference, etc.)",
     )
     parser.add_argument(
-        '--functional', metavar='functional', type=str, default=None,
-        help='exchange-correlation functional, HF for Hartree-Fock'
+        "--functional",
+        metavar="functional",
+        type=str,
+        default=None,
+        help="exchange-correlation functional, HF for Hartree-Fock",
     )
     parser.add_argument(
-        '--analysis-level', default=1, type=int,
-        help='Level of analysis to search for each system, looks '
-             'for analysis_L{analysis-level}.hdf5'
+        "--analysis-level",
+        default=1,
+        type=int,
+        help="Level of analysis to search for each system, looks "
+        "for analysis_L{analysis-level}.hdf5",
     )
     parser.add_argument(
-        '--sparse-grid', default=None, type=int, nargs='+',
-        help='use a sparse grid to compute features, etc. '
-             'If set, recomputes data.'
+        "--sparse-grid",
+        default=None,
+        type=int,
+        nargs="+",
+        help="use a sparse grid to compute features, etc. " "If set, recomputes data.",
     )
     parser.add_argument(
-        '--make-fws', action='store_true',
-        help='If True, make a firework to generate features for each'
-             'molecule, to be run later. If False, generate features'
-             'for each molecule serially within this script.'
+        "--make-fws",
+        action="store_true",
+        help="If True, make a firework to generate features for each"
+        "molecule, to be run later. If False, generate features"
+        "for each molecule serially within this script.",
     )
     parser.add_argument(
-        '--save-gap-data', action='store_true',
-        help='If True, store the band gap data for eac molecule.'
+        "--save-gap-data",
+        action="store_true",
+        help="If True, store the band gap data for eac molecule.",
     )
     parser.add_argument(
-        '--skip-existing', action='store_true',
-        help='skip system if save_file exists already'
+        "--skip-existing",
+        action="store_true",
+        help="skip system if save_file exists already",
     )
     parser.add_argument(
-        '--save-dir', default=None, type=str,
-        help='override default save directory for features'
+        "--save-dir",
+        default=None,
+        type=str,
+        help="override default save directory for features",
     )
     args = parser.parse_args()
 
-    if args.settings_file is None or args.settings_file == '__REF__':
-        settings = 'l'
+    if args.settings_file is None or args.settings_file == "__REF__":
+        settings = "l"
     else:
-        with open(args.settings_file, 'r') as f:
+        with open(args.settings_file, "r") as f:
             settings = yaml.load(f, Loader=yaml.CLoader)
 
     mol_id_list = load_mol_ids(args.mol_id_file)
-    if args.mol_id_file.endswith('.yaml'):
+    if args.mol_id_file.endswith(".yaml"):
         mol_id_code = args.mol_id_file[:-5]
     else:
         mol_id_code = args.mol_id_file
@@ -258,12 +311,12 @@ def main():
     elif len(args.sparse_grid) == 2:
         sparse_level = (args.sparse_grid[0], args.sparse_grid[1])
     else:
-        raise ValueError('Sparse grid must be 1 or 2 integers')
+        raise ValueError("Sparse grid must be 1 or 2 integers")
 
     res = compile_dataset(
         settings,
         args.feat_name,
-        mol_id_code.upper().split('/')[-1],
+        mol_id_code.upper().split("/")[-1],
         mol_id_list,
         SAVE_ROOT,
         args.functional,
@@ -272,10 +325,11 @@ def main():
         save_gap_data=args.save_gap_data,
         make_fws=args.make_fws,
         skip_existing=args.skip_existing,
-        save_dir=args.save_dir
+        save_dir=args.save_dir,
     )
     if args.make_fws:
-        from fireworks import LaunchPad, Firework
+        from fireworks import Firework, LaunchPad
+
         launchpad = LaunchPad.auto_load()
         for fw in res:
             fw = Firework([res[fw]], name=fw)
@@ -283,5 +337,5 @@ def main():
             launchpad.add_wf(fw)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
