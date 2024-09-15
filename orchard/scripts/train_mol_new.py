@@ -27,9 +27,9 @@ from argparse import ArgumentParser
 
 import numpy as np
 import yaml
+from ciderpress.dft.baselines import BASELINE_CODES
 from ciderpress.dft.settings import LDA_FACTOR, FeatureSettings
 from ciderpress.dft.transform_data import FeatureList
-from ciderpress.models.baselines import BASELINE_CODES
 from ciderpress.models.dft_kernel import DFTKernel
 from ciderpress.models.train import MOLGP, strk_to_tuplek
 from joblib import dump, load
@@ -124,6 +124,7 @@ def parse_settings(set0, data_settings, args):
             feat_name,
         )
         fname = os.path.join(dname, "{}_settings.yaml".format(set0))
+        print(fname)
         with open(fname, "r") as f:
             settings_dict[feat_type] = yaml.load(f, Loader=yaml.CLoader)[
                 "FEAT_SETTINGS"
@@ -137,7 +138,7 @@ def parse_settings(set0, data_settings, args):
         sl_settings=settings_dict["SL"],
         nldf_settings=settings_dict["NLDF"],
         nlof_settings=settings_dict["NLOF"],
-        sadm_settings=settings_dict["SDMX"],
+        sdmx_settings=settings_dict["SDMX"],
         hyb_settings=settings_dict["HYB"],
         normalizers=normalizers,
     )
@@ -465,20 +466,27 @@ def main():
                 deriv_pca = None
             else:
                 X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
-                DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
-                DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
-                val_pca = analyze_cov(X1)
-                analyze_cov(DXO1, avg_and_std=val_pca[:2])
-                analyze_cov(DXU1, avg_and_std=val_pca[:2])
-                deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
-                lscale = np.std(X1, axis=0)
-                print("SHAPES", X1.shape, yctrl.shape)
+                # DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
+                # DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
+                # val_pca = analyze_cov(X1)
+                # analyze_cov(DXO1, avg_and_std=val_pca[:2])
+                # analyze_cov(DXU1, avg_and_std=val_pca[:2])
+                # deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
+                val_pca = None
+                deriv_pca = None
+                if X1.ndim == 2:
+                    lscale = np.std(X1, axis=0)
+                else:
+                    lscale = np.std(X1, axis=(0, 1))
+                # print("SHAPES", X1.shape, yctrl.shape)
+            if "scale_override" in plan:
+                scale = np.array(plan.pop("scale_override"))
+            elif args.scale_override is None:
+                scale = np.var(yctrl)
+            else:
+                scale = args.scale_override
             kernel = plan_module.get_kernel(
-                natural_scale=(
-                    np.var(yctrl)
-                    if args.scale_override is None
-                    else args.scale_override
-                ),
+                natural_scale=scale,
                 natural_lscale=lscale,
                 scale_factor=args.scale_mul,
                 lscale_factor=args.length_scale_mul,

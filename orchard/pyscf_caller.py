@@ -146,15 +146,21 @@ def setup_calc(atoms, settings):
         else:
             # TODO grid level settings
             import joblib
-            from ciderpress.dft.ri_cider import setup_cider_calc
+            from ciderpress.pyscf.dft import make_cider_calc
 
+            settings["calc"].pop("xc", None)
+            calc = dft.UKS(mol) if settings["control"]["spinpol"] else dft.RKS(mol)
             mlfunc_filename = settings["cider"].pop("mlfunc_filename")
-            calc = setup_cider_calc(
-                mol,
-                joblib.load(mlfunc_filename),
-                spinpol=settings["control"]["spinpol"],
-                **(settings["cider"]),
+            calc = make_cider_calc(
+                calc,
+                mlfunc_filename,
+                xc=settings["cider"].get("xc"),
+                xkernel=settings["cider"].get("xkernel"),
+                ckernel=settings["cider"].get("ckernel"),
+                mlfunc_format=settings["cider"].get("mlfunc_format"),
+                # **(settings["cider"]),
             )
+            calc.small_rho_cutoff = 0.0
     elif (not is_cider) and is_jax:
         from ciderpress.dft.jax_ks import setup_jax_exx_calc
 
