@@ -30,8 +30,8 @@ import yaml
 from ciderpress.dft.baselines import BASELINE_CODES
 from ciderpress.dft.settings import LDA_FACTOR, FeatureSettings
 from ciderpress.dft.transform_data import FeatureList
-from ciderpress.models.dft_kernel import DFTKernel
-from ciderpress.models.train import MOLGP, strk_to_tuplek
+from ciderpress.models.dft_kernel import DFTKernel, DFTKernel2
+from ciderpress.models.train import MOLGP, MOLGP2, strk_to_tuplek
 from joblib import dump, load
 
 from orchard.workflow_utils import load_rxns
@@ -380,6 +380,10 @@ def main():
         help="If path exists, load this model and refit (possibly with new "
         "weights on datasets) while ignoring other parameters.",
     )
+    parser.add_argument(
+        "--version2",
+        action="store_true",
+    )
     args = parser.parse_args()
     if args.debug_model is not None:
         args.debug_model = load(args.debug_model)
@@ -448,8 +452,9 @@ def main():
             feature_list = FeatureList.load(plan["feature_list"])
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
+            kcls = DFTKernel2 if args.version2 else DFTKernel
             kernels.append(
-                DFTKernel(
+                kcls(
                     None,
                     feature_list,
                     plan["mode"],
@@ -500,7 +505,8 @@ def main():
                 mfunc = None
             mapping_plans.append(mfunc)
 
-        gpr = MOLGP(
+        gpcls = MOLGP2 if args.version2 else MOLGP
+        gpr = gpcls(
             kernels,
             settings,
             libxc_baseline=args.libxc_baseline,
