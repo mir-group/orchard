@@ -120,7 +120,7 @@ def setup_calc(atoms, settings):
                 mlfunc_filename,
                 **(settings['cider'])
             )
-
+            calc.small_rho_cutoff = 0.0
         else:
             # TODO grid level settings
             from ciderpress.dft.ri_cider import setup_cider_calc
@@ -132,6 +132,7 @@ def setup_calc(atoms, settings):
                 spinpol=settings['control']['spinpol'],
                 **(settings['cider']),
             )
+            calc.small_rho_cutoff = 0.0
     elif (not is_cider) and is_jax:
         from ciderpress.dft.jax_ks import setup_jax_exx_calc
         calc = setup_jax_exx_calc(
