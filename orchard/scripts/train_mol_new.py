@@ -187,7 +187,7 @@ def parse_dataset_for_ctrl(fname, n, args, data_settings, feat_settings):
     GXUlist = []
     ylist = []
     for mol_id in mol_ids:
-        data = MOLGP.load_data(dirnames, mol_id, None, "new")
+        data = MOLGP.load_data(dirnames, mol_id, None)
         cond = data["desc"][:, 0, :] > args.density_cutoff
         print(data["desc"].shape, data["val"].shape)
         y = data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3)) - 1
@@ -453,13 +453,19 @@ def main():
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
             kcls = DFTKernel2 if args.version2 else DFTKernel
+            if kcls == DFTKernel:
+                mb = BASELINE_CODES[plan["multiplicative_baseline"]]
+                ab = BASELINE_CODES.get(plan["additive_baseline"])
+            else:
+                mb = plan["multiplicative_baseline"]
+                ab = plan.get("additive_baseline")
             kernels.append(
                 kcls(
                     None,
                     feature_list,
                     plan["mode"],
-                    BASELINE_CODES[plan["multiplicative_baseline"]],
-                    additive_baseline=BASELINE_CODES.get(plan["additive_baseline"]),
+                    mb,
+                    additive_baseline=ab,
                     ctrl_tol=ctrl_tol,
                     ctrl_nmax=ctrl_nmax,
                     component=plan.get("component"),

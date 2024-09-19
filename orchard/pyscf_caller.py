@@ -142,7 +142,7 @@ def setup_calc(atoms, settings):
             mlfunc_filename = settings["cider"].pop("mlfunc_filename")
             settings["calc"].pop("xc", None)
             calc = make_cider_calc(calc, mlfunc_filename, **(settings["cider"]))
-
+            calc.small_rho_cutoff = 0.0
         else:
             # TODO grid level settings
             import joblib
