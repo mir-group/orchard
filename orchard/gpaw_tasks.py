@@ -7,6 +7,7 @@ from orchard.workflow_utils import get_save_dir
 import time, yaml, os, subprocess, shutil, sys, shlex
 import ase.io
 from ase import Atoms
+import psutil
 
 import copy
 
@@ -41,6 +42,8 @@ def setup_gpaw_cmd(struct, settings_inp, nproc=None, cmd=None, update_only=False
         cmd = 'python {call_script} {settings_path}'
     else:
         cmd = 'mpirun -np {nproc} python {call_script} {settings_path}'
+    
+    print(f"Running GPAW with {nproc} processors")  # Print the number of parallel processes used
 
     #logfile = settings_inp['calc'].get('txt') or DEFAULT_GPAW_CALC_SETTINGS.get('txt')
     #print('LOGFILE', logfile)
@@ -92,10 +95,20 @@ def call_gpaw(cmd, logfile, require_converged=True):
     logfile = os.path.abspath(logfile)
     f = open(logfile, 'w')
     print('LOGFILE', logfile)
+
+    # Print initial CPU and memory usage
+    print(f"Initial CPU usage: {psutil.cpu_percent()}%")
+    print(f"Initial Memory usage: {psutil.virtual_memory().percent}%")
+
     start_time = time.monotonic()
     proc = subprocess.Popen(shlex.split(cmd), shell=False, stdout=f, stderr=f)
     proc.wait()
     stop_time = time.monotonic()
+
+    # Print final CPU and memory usage
+    print(f"Final CPU usage: {psutil.cpu_percent()}%")
+    print(f"Final Memory usage: {psutil.virtual_memory().percent}%")
+
     f.close()
     if proc.returncode != 0:
         successful = False
@@ -122,6 +135,7 @@ class GPAWSinglePointSCF(FiretaskBase):
     optional_params = ['require_converged', 'method_description', 'nproc', 'cmd']
 
     def run_task(self, fw_spec):
+        print(f"Starting SCF calculation for system: {self['system_id']}")
         if self.get('require_converged') is None:
             self['require_converged'] = True
         cmd, save_file, settings = setup_gpaw_cmd(
@@ -136,6 +150,8 @@ class GPAWSinglePointSCF(FiretaskBase):
         successful, update_spec, wall_time, logfile = call_gpaw(
             cmd, logfile, require_converged=self['require_converged']
         )
+        print(f"SCF calculation completed for system: {self['system_id']}, successful: {successful}")
+
         struct = update_spec.get('struct') or self['struct']
 
         update_spec.update({

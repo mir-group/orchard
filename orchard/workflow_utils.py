@@ -62,7 +62,11 @@ def load_rxns(rxn_list_id, rxndir=None):
         
 
 def read_accdb_structure(struct_id):
-    fname = '{}.xyz'.format(os.path.join(ACCDB_ROOT, 'Geometries', struct_id))
+    # fname = '{}.xyz'.format(os.path.join(ACCDB_ROOT, 'Geometries', struct_id))
+    # replace "=" "." with "_" to find the xyz files
+    struct_id_modified = struct_id.replace('=', '_').replace('.', '_') 
+    # This modified id is only used inside this function, not gonna pass on to other places. The original struct_id is generally used.
+    fname = '{}.xyz'.format(os.path.join(ACCDB_ROOT, 'Geometries', struct_id_modified))
     with open(fname, 'r') as f:
         #print(fname)
         lines = f.readlines()

@@ -40,8 +40,13 @@ def get_feat_type(settings):
 
 
 def compile_single_system(
-        settings, save_file, analyzer_file, sparse_level, orbs, save_baselines
+        # settings, save_file, analyzer_file, sparse_level, orbs, save_baselines
+        settings, save_file, analyzer_file, sparse_level, orbs, save_baselines, ref_config
 ):
+    if settings == 'l':
+        with open(ref_config, 'r') as f:
+            ref_settings = yaml.load(f, Loader=yaml.CLoader)
+            print('ref_config', ref_config, 'ref_settings:', ref_settings)
     start = time.monotonic()
     analyzer = ElectronAnalyzer.load(analyzer_file)
     if sparse_level is not None:
@@ -77,9 +82,18 @@ def compile_single_system(
         spinpol = False
     if settings == 'l':
         values = analyzer.get('ex_energy_density')
-        # TODO need to be able to generate reference data for range-separated exchange
-        # This function will fetch the range-separated exact exchange from the analysis
-        # values = analyzer.get_rs(omega)
+        ref_type = ref_settings.get('ref_type')
+        omega = ref_settings.get('omega')
+        print("omegaaaaaaaaaaaaaaaaaaaaaaaaaaaa:", omega)
+        term = ref_settings.get('energy_type')
+        if ref_type == 'e':
+            values = analyzer.get('ex_energy_density')
+        elif ref_type == 'sr' :
+            values = analyzer.get_rs(term, -omega)
+        elif ref_type == 'lr':
+            values = analyzer.get_rs(term, omega)
+        else:
+            raise TypeError('Invalid ref_type')
         weights = analyzer.grids.weights
         coords = analyzer.grids.coords
         if spinpol:
@@ -94,11 +108,14 @@ def compile_single_system(
             'wt' : weights
         }
         if orbs is not None:
-            data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
-            # TODO need to be able to generate reference data for range-separated exchange
-            # This function will compute the contribution of short and long-range exchange to VXC
-            # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('SR_HF(omega)', orbs))
-            # data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('LR_HF(0.11)', orbs))
+            if ref_type == 'e':
+                data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo('HF', orbs))
+            elif ref_type == 'sr':
+                data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo(f'SR_HF({omega})', orbs))
+            elif ref_type == 'lr':
+                data['dval'] = intk_to_strk(analyzer.calculate_vxc_on_mo(f'LR_HF({omega})', orbs))
+            else:
+                raise TypeError('Invalid ref_type')
             data['drho_data'] = intk_to_strk(ddesc)
             data['eigvals'] = intk_to_strk(eigvals)
         if save_baselines:
@@ -125,6 +142,7 @@ def compile_dataset(
         save_root,
         functional,
         basis,
+        ref_config,
         sparse_level=None,
         analysis_level=1,
         save_gap_data=False,
@@ -171,8 +189,7 @@ def compile_dataset(
             print('Already exists, skipping:', mol_id)
             continue
         analyzer_file = data_dir + '/analysis_L{}.hdf5'.format(analysis_level)
-        args = [feat_settings, save_file, analyzer_file,
-                sparse_level, orbs, save_baselines]
+        args = [feat_settings, save_file, analyzer_file, sparse_level, orbs, save_baselines, ref_config]
         if make_fws:
             fwname = 'feature_{}_{}'.format(feat_name, mol_id)
             args[0] = yaml.dump(args[0], Dumper=yaml.CDumper)
@@ -237,6 +254,7 @@ def main():
         '--save-dir', default=None, type=str,
         help='override default save directory for features'
     )
+    parser.add_argument('--ref-config', type=str, default=None, help='Path to the reference configuration YAML file')
     args = parser.parse_args()
 
     if args.settings_file is None or args.settings_file == '__REF__':
@@ -244,6 +262,10 @@ def main():
     else:
         with open(args.settings_file, 'r') as f:
             settings = yaml.load(f, Loader=yaml.CLoader)
+
+    # Convert ref_config to absolute path
+    if args.ref_config is not None and not os.path.isabs(args.ref_config):
+        args.ref_config = os.path.abspath(args.ref_config)
 
     mol_id_list = load_mol_ids(args.mol_id_file)
     if args.mol_id_file.endswith('.yaml'):
@@ -272,7 +294,8 @@ def main():
         save_gap_data=args.save_gap_data,
         make_fws=args.make_fws,
         skip_existing=args.skip_existing,
-        save_dir=args.save_dir
+        save_dir=args.save_dir,
+        ref_config=args.ref_config
     )
     if args.make_fws:
         from fireworks import LaunchPad, Firework

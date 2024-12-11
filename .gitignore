@@ -3,3 +3,4 @@
 *.err
 *.tmp
 *.xml
+*.pyc

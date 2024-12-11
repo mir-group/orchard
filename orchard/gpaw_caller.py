@@ -124,10 +124,10 @@ def get_nscf_energy_hybrid(atoms, settings, control):
     #atoms.calc.reset()
     #atoms.calc.initialize()
     e0 = atoms.get_potential_energy()
-    #atoms.calc.set(kpts=(8,8,8))
+    #atoms.calc.new(kpts=(8,8,8))
     settings['txt'] = settings.get('txt') or '-'
     #settings['verbose'] = settings.get('verbose') or 1
-    atoms.calc.set(**settings)
+    atoms.calc.new(**settings)
     if control.get('parallel') is not None:
         atoms.calc.parallel.update(control['parallel'])   
     e0t = atoms.get_potential_energy()

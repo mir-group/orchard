@@ -167,9 +167,10 @@ def setup_calc(atoms, settings):
         calc = sgx.sgx_fit(calc, auxbasis=auxbasis, pjs=pjs)
         calc.with_df.__dict__.update(**sgx_params)
     elif settings['control']['density_fit']:
-        calc = calc.density_fit(only_dfj=settings['control'].get('only_dfj') or False)
+        # calc = calc.density_fit(only_dfj=settings['control'].get('only_dfj') or False)
         if settings['control'].get('df_basis') is not None:
-            calc.with_df.auxbasis = settings['control']['df_basis']
+            # calc.with_df.auxbasis = settings['control']['df_basis']
+            calc.density_fit(auxbasis=settings['control']['df_basis']) 
 
     if settings['calc'].get('nlc') is not None:
         calc.nlcgrids.level = 1
@@ -190,8 +191,26 @@ def setup_calc(atoms, settings):
             calc.with_dftd3.xc = d3xc
     elif settings['control'].get('dftd4'):
         import dftd4.pyscf as pyd4
+
+        from dftd4.parameters import get_damping_param
+        # Print Settings
+        print("\n=== DFTD4 Settings ===")
+        print("Calculation XC:", settings["calc"].get('xc'))
+        print("DFTD4 functional:", settings["control"].get("dftd4_functional"))
+
         calc = pyd4.energy(calc)
         d4func = settings['control'].get('dftd4_functional')
+
+        # Print Parameters
+        print("\n=== DFTD4 Parameters ===")
+        if d4func is not None:
+            print("Explicitly specified parameters:", get_damping_param(d4func))
+        if settings["calc"].get('xc') is None:
+            print("settings['calc'].get('xc') is None")
+        else:
+            print("Default parameters:", get_damping_param(settings["calc"].get('xc')))
+        print("=====================\n")
+
         if d4func is not None:
             calc.with_dftd4 = pyd4.DFTD4Dispersion(
                 calc.mol, xc=d4func.upper().replace(" ", "")
