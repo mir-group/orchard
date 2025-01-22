@@ -27,7 +27,7 @@ from ase.parallel import paropen
 from ase.units import Ha
 from gpaw import restart
 from pyscf.lib import chkfile
-
+from ciderpress.gpaw.descriptors import get_descriptors
 
 def get_exx(data_dir, calc, kpts, save_gap_data=False):
     """
@@ -102,9 +102,29 @@ def intk_to_strk(d):
     return nd
 
 
-def save_features(save_file, data_dir, calc, version, gg_kwargs, save_gap_data=False):
-    from ciderpress.gpaw.analysis import get_features
+def _get_features(calc, all_settings, p_i=None, **kwargs):
+    kwargs = {k: v for k, v in kwargs.items()}
+    feats = []
+    if p_i is not None:
+        dfeats = []
+    assert len(all_settings) > 0
+    for settings in all_settings:
+        kwargs["settings"] = settings
+        if p_i is None:
+            feat, wt = get_descriptors(calc, **kwargs)
+            feats.append(feat)
+        else:
+            feat, dfeat, wt = get_descriptors(calc, p_i=p_i, **kwargs)
+            feats.append(feat)
+            dfeats.append(dfeat)
+    feat = np.concatenate(feats, axis=1)
+    if p_i is None:
+        return feat, wt
+    else:
+        dfeat = np.concatenate(dfeats, axis=1)
+        return feat, dfeat, wt
 
+def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False):
     with paropen(os.path.join(data_dir, "exx_data.yaml"), "r") as f:
         data = yaml.load(f, Loader=yaml.CLoader)
     data.pop("kpts")
@@ -118,8 +138,10 @@ def save_features(save_file, data_dir, calc, version, gg_kwargs, save_gap_data=F
             data.pop("p_be")
         p_be = None
 
-    res = get_features(calc, p_i=p_be, version=version, **gg_kwargs)
-    rho_res = get_features(calc, p_i=p_be, version="l")
+
+    res = get_descriptors(calc, feat_settings, p_i=p_be)
+  
+    rho_res = get_descriptors(calc, "l", p_i=p_be)
     if p_be is None:
         feat_sig, all_wt = res
         rho_sig, _ = rho_res
@@ -159,6 +181,7 @@ def call_gpaw():
 
     data_dir = settings["data_dir"]
     task = settings["task"]  # should be EXX or FEAT
+    feat_settings = settings["feat_settings"] #features settings object
     atoms, calc = restart(os.path.join(data_dir, "calc.gpw"), txt="-")
     if task == "EXX":
         get_exx(
@@ -172,8 +195,7 @@ def call_gpaw():
             settings["save_file"],
             data_dir,
             calc,
-            settings["version"],
-            settings["gg_kwargs"],
+            feat_settings,
             save_gap_data=settings.get("save_gap_data"),
         )
 

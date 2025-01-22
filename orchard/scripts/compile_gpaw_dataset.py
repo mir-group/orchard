@@ -23,74 +23,110 @@ import os
 from argparse import ArgumentParser
 
 import yaml
-from ciderpress.density import GG_AMIN
+#from ciderpress.density import GG_AMIN #mabdallah: commented this
 
+from ciderpress.dft.settings import (
+    FracLaplSettings,
+    HybridSettings,
+    NLDFSettings,
+    SDMXBaseSettings,
+    SemilocalSettings,
+)
+from ciderpress.gpaw.descriptors import get_descriptors
 from orchard.gpaw_tasks import StoreFeatures
-from orchard.workflow_utils import SAVE_ROOT, load_mol_ids
+#from orchard.workflow_utils import SAVE_ROOT, load_mol_ids
+from orchard.workflow_utils import SAVE_ROOT, get_save_dir, load_mol_ids
 
+def get_feat_type(settings):
+    if settings == "l":
+        return "REF"
+    elif isinstance(settings, SemilocalSettings):
+        return "SL"
+    elif isinstance(settings, NLDFSettings):
+        return "NLDF"
+    elif isinstance(settings, FracLaplSettings):
+        return "NLOF"
+    elif isinstance(settings, SDMXBaseSettings):
+        return "SDMX"
+    elif isinstance(settings, HybridSettings):
+        return "HYB"
+    else:
+        raise ValueError
 
 def compile_dataset(
-    DESC_NAME,
-    DATASET_NAME,
-    MOL_IDS,
-    SAVE_ROOT,
-    FUNCTIONAL,
-    gg_kwargs,
-    version="b",
+    feat_settings,
+    feat_name,
+    dataset_name,
+    mol_id_list,
+    save_root,
+    functional,
+    basis,
     save_gap_data=False,
     save_baselines=True,
+    make_fws=False,
+    skip_existing=False,
     save_dir=None,
 ):
-    if version not in ["b", "d"]:
-        raise ValueError("Unsupported version for new dataset module")
+    if not (isinstance (feat_settings, SemilocalSettings) or isinstance (feat_settings, NLDFSettings)):
+        raise NotImplementedError("Only SL Settings and NLDF Settings are supported for GPAW currently.")
+    if basis!="GPAW":
+        raise ValueError("Only GPAW basis is supported for compile_gpaw_dataset. Check compile_pyscf_dataset for PySCF.")
+   
+  #  if save_gap_data:
+  #      orbs = {"O": [0], "U": [0]}
+  #  else:
+  #      orbs = None
+  #  orbs = None
+    feat_type = get_feat_type(feat_settings)
 
     if save_dir is None:
         save_dir = os.path.join(
-            SAVE_ROOT,
-            "DATASETS",
-            FUNCTIONAL,
-            version,
-            DESC_NAME,
+            save_root, "DATASETS", functional, basis, feat_type, feat_name
         )
     else:
-        save_dir = os.path.join(save_dir, DESC_NAME)
+        save_dir = os.path.join(save_dir, feat_type, feat_name)
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir, exist_ok=True)
+
     settings = {
-        "DATASET_NAME": DATASET_NAME,
-        "DESC_NAME": DESC_NAME,
-        "MOL_IDS": MOL_IDS,
-        "SAVE_ROOT": SAVE_ROOT,
-        "FUNCTIONAL": FUNCTIONAL,
-        "BASIS": "GPAW",
-        "version": version,
+        "DATASET_NAME": dataset_name,
+        "FEAT_NAME": feat_name,
+        "MOL_IDS": mol_id_list,
+        "SAVE_ROOT": save_root,
+        "FUNCTIONAL": functional,
+        "BASIS": basis,
+        "FEAT_SETTINGS": feat_settings,
+        "SAVE_GAP_DATA": save_gap_data,
     }
-    settings.update(gg_kwargs)
-    print(save_dir, SAVE_ROOT, DESC_NAME)
-    print(os.path.join(save_dir, "{}_settings.yaml".format(DATASET_NAME)))
-    with open(
-        os.path.join(save_dir, "{}_settings.yaml".format(DATASET_NAME)), "w"
-    ) as f:
+    print(save_dir, save_root, feat_name)
+    settings_fname = "{}_settings.yaml".format(dataset_name)
+    print(os.path.join(save_dir, settings_fname))
+    with open(os.path.join(save_dir, settings_fname), "w") as f:
         yaml.dump(settings, f)
 
     fwlist = {}
 
-    for MOL_ID in MOL_IDS:
-        logging.info("Computing descriptors for {}".format(MOL_ID))
-        save_file = os.path.join(save_dir, MOL_ID + ".hdf5")
-        data_dir = os.path.join(SAVE_ROOT, "PW-KS", FUNCTIONAL, MOL_ID)
+    for mol_id in mol_id_list:
+        logging.info("Computing descriptors for {}".format(mol_id))
+        data_dir = get_save_dir(save_root, "KS", basis, mol_id, functional)
+        save_file = os.path.join(save_dir, mol_id + ".hdf5")
+        if os.path.exists(save_file) and skip_existing:
+            print("Already exists, skipping:", mol_id)
+            continue
         calc_settings = {
             "task": "FEAT",
             "data_dir": data_dir,
             "save_file": save_file,
             "save_gap_data": save_gap_data,
             "save_baselines": save_baselines,
-            "gg_kwargs": gg_kwargs,
-            "version": version,
-        }
-        fwname = "gpaw_feature_{}_{}".format(version, MOL_ID)
-        fwlist[fwname] = StoreFeatures(settings=calc_settings)
-
+            "feat_settings": feat_settings,
+        } 
+        if make_fws:
+            fwname = "gpaw_feature_{}_{}".format(feat_name, mol_id)
+            calc_settings[0] = yaml.dump(calc_settings[0], Dumper=yaml.CDumper) #check this 
+            fwlist[fwname] = StoreFeatures(settings=calc_settings)
+        else:
+            pass
     return fwlist
 
 
@@ -138,31 +174,54 @@ def main():
         "mol_id_file", type=str, help="yaml file from which to read mol_ids to parse"
     )
     parser.add_argument(
+        "feat_name",
+        type=str,
+        help="Name of the feature set being generated, used to make "
+        "save directory for generated data.",
+    )
+    parser.add_argument(
+        "basis",
+        metavar="basis",
+        type=str,
+        help="Basis set that was used for the DFT calculations",
+    )
+    parser.add_argument(
+        "--settings-file",
+        metavar="settings_file",
+        type=str,
+        default=None,
+        help="Path to a yaml file containing a serialized FeatureSettings "
+        "class. If not provided, generates the reference data "
+        "(i.e. semilocal density, EXX and XC reference, etc.)",
+    )
+    parser.add_argument(
         "--functional",
         metavar="functional",
         type=str,
         default=None,
         help="exchange-correlation functional, HF for Hartree-Fock",
     )
+
     parser.add_argument(
-        "--version", default="c", type=str, help="version of descriptor set. Default c"
+        "--make-fws",
+        action="store_true",
+        help="If True, make a firework to generate features for each"
+        "molecule, to be run later. If False, generate features"
+        "for each molecule serially within this script.",
     )
-    parser.add_argument("--gg-a0", default=8.0, type=float)
-    parser.add_argument("--gg-facmul", default=1.0, type=float)
-    parser.add_argument("--gg-amin", default=GG_AMIN, type=float)
+
     parser.add_argument(
-        "--gg-vvmul",
-        default=1.0,
-        type=float,
-        help="For version b only, mul to get second coord exponent",
+        "--skip-existing",
+        action="store_true",
+        help="skip system if save_file exists already",
     )
+
     parser.add_argument(
-        "--suffix",
-        default=None,
-        type=str,
-        help="customize data directories with this suffix",
+        "--save-gap-data",
+        action="store_true",
+        help="If True, store the band gap data for each molecule.",
     )
-    parser.add_argument("--save-gap-data", action="store_true")
+
     parser.add_argument("--exx-only", action="store_true")
     parser.add_argument("--kpt-density", default=4.5, type=float)
     parser.add_argument(
@@ -172,19 +231,17 @@ def main():
         help="override default save directory for features",
     )
     args = parser.parse_args()
-
-    version = args.version.lower()
-    if version not in ["b", "d"]:
-        raise ValueError("Unsupported descriptor set")
+    if args.settings_file is None or args.settings_file == "__REF__":
+        settings = "l"
+    else:
+        with open(args.settings_file, "r") as f:
+            settings = yaml.load(f, Loader=yaml.CLoader)
 
     mol_ids = load_mol_ids(args.mol_id_file)
     if args.mol_id_file.endswith(".yaml"):
         mol_id_code = args.mol_id_file[:-5]
     else:
         mol_id_code = args.mol_id_file
-    gg_kwargs = {"amin": args.gg_amin, "a0": args.gg_a0, "fac_mul": args.gg_facmul}
-    if version in ["b", "d"]:
-        gg_kwargs["vvmul"] = args.gg_vvmul
     if args.exx_only:
         res = compile_exx_dataset(
             mol_ids,
@@ -195,23 +252,27 @@ def main():
         )
     else:
         res = compile_dataset(
-            "_UNNAMED" if args.suffix is None else args.suffix,
+            settings,
+            args.feat_name,
             mol_id_code.upper().split("/")[-1],
             mol_ids,
             SAVE_ROOT,
             args.functional,
-            gg_kwargs,
-            version=version,
+            args.basis,
             save_gap_data=args.save_gap_data,
+            make_fws=args.make_fws,
+            skip_existing=args.skip_existing,
             save_dir=args.save_dir,
         )
-    from fireworks import Firework, LaunchPad
 
-    launchpad = LaunchPad.auto_load()
-    for fw in res:
-        fw = Firework([res[fw]], name=fw)
-        print(fw.name)
-        launchpad.add_wf(fw)
+    if args.make_fws:
+        from fireworks import Firework, LaunchPad
+
+        launchpad = LaunchPad.auto_load()
+        for fw in res:
+            fw = Firework([res[fw]], name=fw)
+            print(fw.name)
+            launchpad.add_wf(fw)
 
 
 if __name__ == "__main__":
