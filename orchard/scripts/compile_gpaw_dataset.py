@@ -24,7 +24,7 @@ from argparse import ArgumentParser
 
 import yaml
 #from ciderpress.density import GG_AMIN #mabdallah: commented this
-
+from orchard.gpaw_data_caller import call_gpaw
 from ciderpress.dft.settings import (
     FracLaplSettings,
     HybridSettings,
@@ -108,7 +108,7 @@ def compile_dataset(
 
     for mol_id in mol_id_list:
         logging.info("Computing descriptors for {}".format(mol_id))
-        data_dir = get_save_dir(save_root, "KS", basis, mol_id, functional)
+        data_dir = get_save_dir(save_root, "KS", basis, mol_id, functional) #mabdallah TODO: should check how to customize this, this should be location of gpw file
         save_file = os.path.join(save_dir, mol_id + ".hdf5")
         if os.path.exists(save_file) and skip_existing:
             print("Already exists, skipping:", mol_id)
@@ -123,10 +123,10 @@ def compile_dataset(
         } 
         if make_fws:
             fwname = "gpaw_feature_{}_{}".format(feat_name, mol_id)
-            calc_settings[0] = yaml.dump(calc_settings[0], Dumper=yaml.CDumper) #check this 
+            calc_settings["feat_settings"] = yaml.dump(calc_settings["feat_settings"], Dumper=yaml.CDumper) #check this 
             fwlist[fwname] = StoreFeatures(settings=calc_settings)
         else:
-            pass
+            call_gpaw(settings_dict=calc_settings) ##TODO: check if this is correct
     return fwlist
 
 
@@ -142,7 +142,7 @@ def compile_exx_dataset(
 
     for MOL_ID in MOL_IDS:
         logging.info("Computing exx for {}".format(MOL_ID))
-        data_dir = os.path.join(SAVE_ROOT, "PW-KS", FUNCTIONAL, MOL_ID)
+        data_dir = os.path.join(SAVE_ROOT, "KS", FUNCTIONAL, MOL_ID)
         new_kpts = (
             None
             if "magmom" in MOL_ID

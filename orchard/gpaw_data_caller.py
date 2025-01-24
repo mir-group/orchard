@@ -102,8 +102,14 @@ def intk_to_strk(d):
     return nd
 
 
-def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False):
-    with paropen(os.path.join(data_dir, "exx_data.yaml"), "r") as f:
+def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False, kpts_for_exx=None):
+    exx_data_path = os.path.join(data_dir, "exx_data.yaml")
+    if not os.path.exists(exx_data_path):
+        print(f"EXX data file not found at {exx_data_path}")
+        print("Generating EXX data...")
+        get_exx(data_dir, calc, kpts_for_exx, save_gap_data=save_gap_data)
+
+    with paropen(exx_data_path, "r") as f:
         data = yaml.load(f, Loader=yaml.CLoader)
     data.pop("kpts")
     if save_gap_data:
@@ -153,9 +159,20 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False)
         chkfile.dump(save_file, "train_data", data)
 
 
-def call_gpaw():
-    with paropen(sys.argv[1], "r") as f:
-        settings = yaml.load(f, Loader=yaml.Loader)
+def call_gpaw(settings_file=None, settings_dict=None):
+    """Call GPAW with either file path or settings dictionary
+    
+    Args:
+        settings_file (str, optional): Path to settings YAML file. If None, uses sys.argv[1]
+        settings_dict (dict, optional): Direct settings dictionary. Takes precedence over file
+    """
+    if settings_dict is not None:
+        settings = settings_dict
+    else:
+        if settings_file is None:
+            settings_file = sys.argv[1]
+        with paropen(settings_file, "r") as f:
+            settings = yaml.load(f, Loader=yaml.Loader)
 
     data_dir = settings["data_dir"]
     task = settings["task"]  # should be EXX or FEAT
@@ -175,6 +192,7 @@ def call_gpaw():
             calc,
             feat_settings,
             save_gap_data=settings.get("save_gap_data"),
+            kpts_for_exx=settings.get("kpts"),
         )
 
 
