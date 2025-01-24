@@ -102,28 +102,6 @@ def intk_to_strk(d):
     return nd
 
 
-def _get_features(calc, all_settings, p_i=None, **kwargs):
-    kwargs = {k: v for k, v in kwargs.items()}
-    feats = []
-    if p_i is not None:
-        dfeats = []
-    assert len(all_settings) > 0
-    for settings in all_settings:
-        kwargs["settings"] = settings
-        if p_i is None:
-            feat, wt = get_descriptors(calc, **kwargs)
-            feats.append(feat)
-        else:
-            feat, dfeat, wt = get_descriptors(calc, p_i=p_i, **kwargs)
-            feats.append(feat)
-            dfeats.append(dfeat)
-    feat = np.concatenate(feats, axis=1)
-    if p_i is None:
-        return feat, wt
-    else:
-        dfeat = np.concatenate(dfeats, axis=1)
-        return feat, dfeat, wt
-
 def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False):
     with paropen(os.path.join(data_dir, "exx_data.yaml"), "r") as f:
         data = yaml.load(f, Loader=yaml.CLoader)
