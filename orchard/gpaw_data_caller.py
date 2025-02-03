@@ -58,7 +58,7 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False):
     data = {}
     data["kpts"] = calc.parameters.kpts
     data["e_tot_orig"] = eterms[0] / Ha
-    data["exc_orig"] = eterms[1] / Ha
+    data["exc_orig"] = -eterms[1] / Ha
     data["xc_orig"] = calc.hamiltonian.xc.name
     data["exx"] = eterms[3:].sum() / Ha
     if p_be is not None:
