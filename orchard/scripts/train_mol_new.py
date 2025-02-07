@@ -29,11 +29,10 @@ import numpy as np
 import yaml
 from ciderpress.dft.settings import LDA_FACTOR, FeatureSettings
 from ciderpress.dft.transform_data import FeatureList
-from ciderpress.models.baselines import BASELINE_CODES
-from ciderpress.models.dft_kernel import DFTKernel
-from ciderpress.models.train import MOLGP, strk_to_tuplek
+from ciderpress.dft.baselines import BASELINE_CODES
+from ciderpress.models.dft_kernel import DFTKernel, DFTKernel2 
+from ciderpress.models.train import MOLGP, MOLGP2, strk_to_tuplek
 from joblib import dump, load
-
 from orchard.workflow_utils import load_rxns
 
 """
@@ -124,6 +123,7 @@ def parse_settings(set0, data_settings, args):
             feat_name,
         )
         fname = os.path.join(dname, "{}_settings.yaml".format(set0))
+        print(f"Loading settings from: {fname}")
         with open(fname, "r") as f:
             settings_dict[feat_type] = yaml.load(f, Loader=yaml.CLoader)[
                 "FEAT_SETTINGS"
@@ -137,10 +137,11 @@ def parse_settings(set0, data_settings, args):
         sl_settings=settings_dict["SL"],
         nldf_settings=settings_dict["NLDF"],
         nlof_settings=settings_dict["NLOF"],
-        sadm_settings=settings_dict["SDMX"],
+        sdmx_settings=settings_dict["SDMX"],
         hyb_settings=settings_dict["HYB"],
         normalizers=normalizers,
     )
+    print(f"SL: {settings_dict['SL']}")
     if args.normalizer_file is None:
         settings.assign_reasonable_normalizer()
         with open("__norms.yaml", "w") as f:
@@ -168,7 +169,9 @@ def get_plan_module(plan_file):
     if plan_file.startswith("@"):
         plan_module = importlib.import_module(plan_file[1:])
     else:
-        assert os.path.exists(plan_file)
+        if not os.path.exists(plan_file):
+            print(f"ERROR: Plan file not found at: {plan_file}")
+            raise FileNotFoundError(f"Plan file not found at: {plan_file}")
         spec = importlib.util.spec_from_file_location("plan_module", plan_file)
         plan_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(plan_module)
@@ -185,11 +188,38 @@ def parse_dataset_for_ctrl(fname, n, args, data_settings, feat_settings):
     GXOlist = []
     GXUlist = []
     ylist = []
+    
+    # Debug: Print available directories
+    print("\nAvailable directories:")
+    for key, path in dirnames.items():
+        print(f"{key}: {path}")
+    
     for mol_id in mol_ids:
-        data = MOLGP.load_data(dirnames, mol_id, None, "new")
+        print(f"\nProcessing molecule: {mol_id}")
+        
+        # Debug: Load and inspect each feature file before MOLGP
+        for feat_type in ["REF", "SL", "NLDF", "NLOF", "SDMX", "HYB"]:
+            if dirnames.get(feat_type):
+                feat_file = os.path.join(dirnames[feat_type], mol_id + ".hdf5")
+                if os.path.exists(feat_file):
+                    from pyscf.lib import chkfile
+                    data = chkfile.load(feat_file, "train_data")
+                    print(f"\n{feat_type} file contents:")
+                    print(f"Keys: {list(data.keys())}")
+                    for key, value in data.items():
+                        if isinstance(value, np.ndarray):
+                            print(f"{key} shape: {value.shape}")
+                        else:
+                            print(f"{key} type: {type(value)}")
+        
+        # Now call the original MOLGP load_data
+        data = MOLGP.load_data(dirnames, mol_id, None)
+        from pyscf.lib import chkfile #mabdallah TODO: Quick fix for mismatch. Should investigate CIDER at somne point...
+        sl_data = chkfile.load(os.path.join(dirnames["SL"], mol_id + ".hdf5"), "train_data")    
         cond = data["desc"][:, 0, :] > args.density_cutoff
         print(data["desc"].shape, data["val"].shape)
-        y = data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3)) - 1
+        y = data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3)) - 1 #mabdallah TODO: why is there a mismatch? this is original line
+        #y = sl_data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3)) - 1 this is fix for mismatch
         cond = np.all(cond, axis=0)
         desc = data["desc"][:, :, cond]
         X = feat_settings.normalizers.get_normalized_feature_vector(desc)
@@ -379,6 +409,10 @@ def main():
         help="If path exists, load this model and refit (possibly with new "
         "weights on datasets) while ignoring other parameters.",
     )
+    parser.add_argument(
+        "--version2",
+        action="store_true",
+    )
     args = parser.parse_args()
     if args.debug_model is not None:
         args.debug_model = load(args.debug_model)
@@ -447,43 +481,57 @@ def main():
             feature_list = FeatureList.load(plan["feature_list"])
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
+            kcls = DFTKernel2 if args.version2 else DFTKernel
+            if kcls == DFTKernel:
+                mb = BASELINE_CODES[plan["multiplicative_baseline"]]
+                ab = BASELINE_CODES.get(plan["additive_baseline"])
+            else:
+                mb = plan["multiplicative_baseline"]
+                ab = plan.get("additive_baseline")
             kernels.append(
-                DFTKernel(
+                kcls(
                     None,
                     feature_list,
                     plan["mode"],
-                    BASELINE_CODES[plan["multiplicative_baseline"]],
-                    additive_baseline=BASELINE_CODES.get(plan["additive_baseline"]),
+                    mb,
+                    additive_baseline=ab,
                     ctrl_tol=ctrl_tol,
                     ctrl_nmax=ctrl_nmax,
                     component=plan.get("component"),
                 )
             )
-            if "lscale_override" in plan:
+            if "lscale_override" in plan: #mabdallah TODO: temporary fix
                 lscale = np.array(plan.pop("lscale_override"))
                 val_pca = None
                 deriv_pca = None
             else:
                 X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
-                DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
-                DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
+                #DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
+                #DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
                 val_pca = analyze_cov(X1)
-                analyze_cov(DXO1, avg_and_std=val_pca[:2])
-                analyze_cov(DXU1, avg_and_std=val_pca[:2])
-                deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
-                lscale = np.std(X1, axis=0)
-                print("SHAPES", X1.shape, yctrl.shape)
+                #analyze_cov(DXO1, avg_and_std=val_pca[:2])
+                #analyze_cov(DXU1, avg_and_std=val_pca[:2])
+                #deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
+                val_pca = None
+                deriv_pca = None
+                if X1.ndim == 2:
+                    lscale = np.std(X1, axis=0)
+                else:
+                    lscale = np.std(X1, axis=(0, 1))
+                # print("SHAPES", X1.shape, yctrl.shape)
+            if "scale_override" in plan:
+                scale = np.array(plan.pop("scale_override"))
+            elif args.scale_override is None:
+                scale = np.var(yctrl)
+            else:
+                scale = args.scale_override
             kernel = plan_module.get_kernel(
-                natural_scale=(
-                    np.var(yctrl)
-                    if args.scale_override is None
-                    else args.scale_override
-                ),
+                natural_scale=scale,
                 natural_lscale=lscale,
                 scale_factor=args.scale_mul,
                 lscale_factor=args.length_scale_mul,
-                val_pca=val_pca,
-                deriv_pca=deriv_pca,
+                #val_pca=val_pca,
+                #deriv_pca=deriv_pca,
             )
             kernels[-1].set_kernel(kernel)
             if "mapping_plan" in dir(plan_module):
@@ -491,8 +539,8 @@ def main():
             else:
                 mfunc = None
             mapping_plans.append(mfunc)
-
-        gpr = MOLGP(
+        gpcls = MOLGP2 if args.version2 else MOLGP
+        gpr = gpcls(
             kernels,
             settings,
             libxc_baseline=args.libxc_baseline,

@@ -32,7 +32,6 @@ from ciderpress.dft.settings import (
     SDMXBaseSettings,
     SemilocalSettings,
 )
-from ciderpress.gpaw.descriptors import get_descriptors
 from orchard.gpaw_tasks import StoreFeatures
 #from orchard.workflow_utils import SAVE_ROOT, load_mol_ids
 from orchard.workflow_utils import SAVE_ROOT, get_save_dir, load_mol_ids
@@ -67,8 +66,10 @@ def compile_dataset(
     skip_existing=False,
     save_dir=None,
 ):
-    if not (isinstance (feat_settings, SemilocalSettings) or isinstance (feat_settings, NLDFSettings)):
-        raise NotImplementedError("Only SL Settings and NLDF Settings are supported for GPAW currently.")
+    feat_type = get_feat_type(feat_settings)
+    if not feat_type == "REF":
+        if not (isinstance (feat_settings, SemilocalSettings) or isinstance (feat_settings, NLDFSettings)):
+            raise NotImplementedError("Only SL Settings and NLDF Settings are supported for GPAW currently.")
     if basis!="GPAW":
         raise ValueError("Only GPAW basis is supported for compile_gpaw_dataset. Check compile_pyscf_dataset for PySCF.")
    
@@ -77,7 +78,6 @@ def compile_dataset(
   #  else:
   #      orbs = None
   #  orbs = None
-    feat_type = get_feat_type(feat_settings)
 
     if save_dir is None:
         save_dir = os.path.join(
@@ -108,7 +108,7 @@ def compile_dataset(
 
     for mol_id in mol_id_list:
         logging.info("Computing descriptors for {}".format(mol_id))
-        data_dir = get_save_dir(save_root, "KS", basis, mol_id, functional) #mabdallah TODO: should check how to customize this, this should be location of gpw file
+        data_dir = get_save_dir(save_root, "PW-KS", basis, mol_id, functional) #mabdallah TODO: should check how to customize this, this should be location of gpw file
         save_file = os.path.join(save_dir, mol_id + ".hdf5")
         if os.path.exists(save_file) and skip_existing:
             print("Already exists, skipping:", mol_id)
@@ -131,18 +131,25 @@ def compile_dataset(
 
 
 def compile_exx_dataset(
-    MOL_IDS,
-    SAVE_ROOT,
-    FUNCTIONAL,
-    kpt_density,
+    feat_settings,
+    mol_id_list,
+    save_root,
+    functional,
+    basis,
     save_gap_data=False,
     save_baselines=True,
+    make_fws=False,
+    skip_existing=False,
+    kpt_density=None,
 ):
     fwlist = {}
 
-    for MOL_ID in MOL_IDS:
+    for MOL_ID in mol_id_list:
         logging.info("Computing exx for {}".format(MOL_ID))
-        data_dir = os.path.join(SAVE_ROOT, "KS", FUNCTIONAL, MOL_ID)
+        data_dir = get_save_dir(save_root, "PW-KS", basis, MOL_ID, functional)
+        if os.path.exists(os.path.join(data_dir, "exx_data.yaml")) and skip_existing:
+            print("Already exists, skipping EXX generation for:", MOL_ID)
+            continue
         new_kpts = (
             None
             if "magmom" in MOL_ID
@@ -157,9 +164,13 @@ def compile_exx_dataset(
             "data_dir": data_dir,
             "save_gap_data": save_gap_data,
             "save_baselines": save_baselines,
+            "feat_settings": feat_settings,
         }
         fwname = "gpaw_exx_{}".format(MOL_ID)
-        fwlist[fwname] = StoreFeatures(settings=calc_settings)
+        if make_fws:
+            fwlist[fwname] = StoreFeatures(settings=calc_settings)
+        else:
+            call_gpaw(settings_dict=calc_settings)
 
     return fwlist
 
@@ -223,7 +234,7 @@ def main():
     )
 
     parser.add_argument("--exx-only", action="store_true")
-    parser.add_argument("--kpt-density", default=4.5, type=float)
+    parser.add_argument("--kpt-density", default=None, type=float)
     parser.add_argument(
         "--save-dir",
         default=None,
@@ -244,11 +255,18 @@ def main():
         mol_id_code = args.mol_id_file
     if args.exx_only:
         res = compile_exx_dataset(
+            settings,
+            args.feat_name,
+            mol_id_code.upper().split("/")[-1],
             mol_ids,
             SAVE_ROOT,
             args.functional,
-            kpt_density=args.kpt_density,
+            args.basis,
             save_gap_data=args.save_gap_data,
+            make_fws=args.make_fws,
+            skip_existing=args.skip_existing,
+            save_dir=args.save_dir,
+            kpt_density=args.kpt_density,
         )
     else:
         res = compile_dataset(

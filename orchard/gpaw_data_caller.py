@@ -28,8 +28,9 @@ from ase.units import Ha
 from gpaw import restart
 from pyscf.lib import chkfile
 from ciderpress.gpaw.descriptors import get_descriptors
+#import traceback
 
-def get_exx(data_dir, calc, kpts, save_gap_data=False):
+def get_exx(data_dir, calc, kpts, save_gap_data=False, run_exx=True):
     """
     :param save_dir:
     :param calc:
@@ -38,9 +39,9 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False):
     """
     from gpaw.hybrids.energy import non_self_consistent_energy
 
-    if kpts is not None:
-        calc.set(kpts=kpts)
-    calc.parameters.eigensolver
+    if kpts is not None and run_exx: #mabdallah TODO: make sure kpts setting in get_exx makes sense
+        calc.new(kpts=kpts)
+    #calc.parameters.eigensolver
     # if solver is None:
     #    pass
     # elif not isinstance(solver, str) or solver.lower() == 'cg':
@@ -54,32 +55,57 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False):
         print(p_be)
     else:
         p_be = None
-    eterms = non_self_consistent_energy(calc, "EXX")
     data = {}
+    if run_exx:
+        eterms = non_self_consistent_energy(calc, "EXX")
+        data["exx"] = eterms[3:].sum() / Ha
+    else:
+        eterms = [Ha*calc.hamiltonian.e_total_free, Ha*-calc.hamiltonian.e_xc]
+        data["exx"] = 0
     data["kpts"] = calc.parameters.kpts
     data["e_tot_orig"] = eterms[0] / Ha
-    data["exc_orig"] = eterms[1] / Ha
+    data["exc_orig"] = -eterms[1] / Ha
     data["xc_orig"] = calc.hamiltonian.xc.name
-    data["exx"] = eterms[3:].sum() / Ha
     if p_be is not None:
-        from gpaw.hybrids.eigenvalues import non_self_consistent_eigenvalues as nsceigs
-
-        eig_dft_dict = {k: {} for k in ["O", "U"]}
-        vxc_dft_dict = {k: {} for k in ["O", "U"]}
-        vxc_hyb_dict = {k: {} for k in ["O", "U"]}
-        for l, p in zip(["O", "U"], p_be):
-            eig_dft, vxc_dft, vxc_hyb = nsceigs(
-                calc, "EXX", n1=p[2], n2=p[2] + 1, kpt_indices=[p[1]]
-            )
-            eig_dft_dict[l][0] = eig_dft[p[0], 0, 0] / Ha
-            vxc_dft_dict[l][0] = vxc_dft[p[0], 0, 0] / Ha
-            vxc_hyb_dict[l][0] = vxc_hyb[p[0], 0, 0] / Ha
-        data["eigvals"] = eig_dft_dict
-        data["vxc_dft"] = vxc_dft_dict
-        data["dval"] = vxc_hyb_dict
-        data["p_be"] = p_be
-    with paropen(os.path.join(data_dir, "exx_data.yaml"), "w") as f:
-        yaml.dump(data, f, Dumper=yaml.CDumper)
+        if run_exx:
+            from gpaw.hybrids.eigenvalues import non_self_consistent_eigenvalues as nsceigs
+            eig_dft_dict = {k: {} for k in ["O", "U"]}
+            vxc_dft_dict = {k: {} for k in ["O", "U"]}
+            vxc_hyb_dict = {k: {} for k in ["O", "U"]}
+            for l, p in zip(["O", "U"], p_be):
+                eig_dft, vxc_dft, vxc_hyb = nsceigs(
+                    calc, "EXX", n1=p[2], n2=p[2] + 1, kpt_indices=[p[1]]
+                )
+                eig_dft_dict[l][0] = eig_dft[p[0], 0, 0] / Ha
+                vxc_dft_dict[l][0] = vxc_dft[p[0], 0, 0] / Ha
+                vxc_hyb_dict[l][0] = vxc_hyb[p[0], 0, 0] / Ha
+            data["eigvals"] = eig_dft_dict
+            data["vxc_dft"] = vxc_dft_dict
+            data["dval"] = vxc_hyb_dict
+            data["p_be"] = p_be
+        else:
+            from gpaw.hybrids.eigenvalues import _semi_local
+            eig_dft_dict = {k: {} for k in ["O", "U"]}
+            vxc_dft_dict = {k: {} for k in ["O", "U"]}
+            vxc_hyb_dict = {k: {} for k in ["O", "U"]}
+            for l, p in zip(["O", "U"], p_be):
+                eig_dft, vxc_dft, vxc_hyb = _semi_local(
+                    calc, calc.hamiltonian.xc.name, n1=p[2], n2=p[2] + 1, kpt_indices=[p[1]]
+                )
+                eig_dft_dict[l][0] = eig_dft[p[0], 0, 0]
+                vxc_dft_dict[l][0] = vxc_dft[p[0], 0, 0]
+                vxc_hyb_dict[l][0] = vxc_hyb[p[0], 0, 0]
+            data["eigvals"] = eig_dft_dict
+            data["vxc_dft"] = vxc_dft_dict
+            data["dval"] = vxc_hyb_dict
+            data["p_be"] = p_be 
+    if run_exx:
+        with paropen(os.path.join(data_dir, "exx_data.yaml"), "w") as f:
+            yaml.dump(data, f, Dumper=yaml.CDumper)
+    else:
+        return data
+        with paropen(os.path.join(data_dir, "data_no_exx.yaml"), "w") as f:
+            yaml.dump(data, f, Dumper=yaml.CDumper)
 
 
 def arr_to_strk(arr, nspin, p_be):
@@ -105,12 +131,24 @@ def intk_to_strk(d):
 def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False, kpts_for_exx=None):
     exx_data_path = os.path.join(data_dir, "exx_data.yaml")
     if not os.path.exists(exx_data_path):
-        print(f"EXX data file not found at {exx_data_path}")
-        print("Generating EXX data...")
-        get_exx(data_dir, calc, kpts_for_exx, save_gap_data=save_gap_data)
+        print(f"EXX data file not found at {exx_data_path}, will extract data from calc.gpw (no EXX!)")
+        data = get_exx(data_dir, calc, kpts_for_exx, save_gap_data=save_gap_data, run_exx=False)
+        #with paropen(os.path.join(data_dir, "data_no_exx.yaml"), "r") as f:
+        #    data = yaml.load(f, Loader=yaml.CLoader)
+    else:
+        print(f"Extracting data (including EXX) from {exx_data_path}")
+        with paropen(exx_data_path, "r") as f:
+            data = yaml.load(f, Loader=yaml.CLoader)
 
-    with paropen(exx_data_path, "r") as f:
-        data = yaml.load(f, Loader=yaml.CLoader)
+    
+    #if data.get("exc_orig") is not None:
+    #    raise Warning("exc_orig data found in exx_data.yaml, however, will extract from calc.gpw (should be same)")
+    ##exc_orig = calc.hamiltonian.e_xc #unit: Ha already
+    ##for setup in calc.hamiltonian.setups:
+    ##    xcc = setup.xc_correction
+    ##    if xcc is not None:
+     ##       exc_orig += xcc.e_xc0
+    ##data["exc_orig"] = exc_orig #mabdallah TODO: this is absolute energy NOT relative to spherical spin-non polarized atoms (GPAW default)
     data.pop("kpts")
     if save_gap_data:
         data["eigvals"] = intk_to_strk(data["eigvals"])
@@ -121,11 +159,50 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False,
         if "p_be" in data.keys():
             data.pop("p_be")
         p_be = None
-
-
-    res = get_descriptors(calc, feat_settings, p_i=p_be)
-  
-    rho_res = get_descriptors(calc, "l", p_i=p_be)
+    try:
+        res = get_descriptors(calc, feat_settings, p_i=p_be)
+        rho_res = get_descriptors(calc, "l", p_i=p_be)
+    except Exception as e:
+        raise RuntimeError(f"Failed to get descriptors: {str(e)}. Maybe try changing qmax value.")
+   
+    #last_qmax = None
+    #last_error_type = None
+    #qmax = 300
+    #step = 500
+    
+    #while qmax <= 10000:
+    #    try:
+    #        res = get_descriptors(calc, feat_settings, p_i=p_be, qmax=qmax)
+    #        rho_res = get_descriptors(calc, "l", p_i=p_be, qmax=qmax)
+    #        print(f"Successfully found working qmax value: {qmax}")
+    #        break
+    #    except (RuntimeError, AssertionError) as e:
+    #        print(f"\nException details:\n{traceback.format_exc()}\n")  # Print full traceback
+    #        if isinstance(e, RuntimeError) and "NLDF exponent is too large" in str(e):
+    #            error_type = "too_low"
+    #            print(f"qmax {qmax} is too low, trying higher value...")
+    #        elif isinstance(e, AssertionError):
+    #            error_type = "too_high"
+    #            print(f"qmax {qmax} is too high, adjusting...")
+    #        else:
+    #            print(f"Unexpected error for qmax {qmax}: {str(e)}")
+    #        raise
+            
+    #    if last_error_type == "too_low" and error_type == "too_high":
+    #        # We've jumped from too low to too high, try values in between
+    #        qmax = last_qmax + (qmax - last_qmax) // 2
+    #        step = (qmax - last_qmax) // 2
+    #    else:
+    #            last_qmax = qmax
+    #            last_error_type = error_type
+    #            qmax += step
+            
+    #    if step < 1:  # If we're making tiny adjustments and still failing
+    #            raise RuntimeError(f"Could not find a working qmax value between {last_qmax} and {qmax}")
+    #        continue
+    #else:
+    #    raise RuntimeError("Failed to find working qmax value between 300 and 10000")
+    
     if p_be is None:
         feat_sig, all_wt = res
         rho_sig, _ = rho_res
@@ -141,15 +218,18 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False,
     nspin = feat_sig.shape[0]
     data.update(
         {
-            "rho": rho_sig,
+            "rho_data": rho_sig,
             "desc": feat_sig,
             "wt": all_wt,
             "nspin": nspin,
         }
     )
-    data["val"] = data["exx"] * np.ones_like(all_wt) / (nspin * all_wt.sum())
+    if data["exx"] is not None:
+        data["val"] = data["exx"] * np.ones_like(all_wt) / (nspin * all_wt.sum())
+    else:
+        data["val"] = np.zeros_like(all_wt)
     if nspin == 2:
-        data["val"] = np.stack([data["val"], data["val"]])  # sums to exx
+            data["val"] = np.stack([data["val"], data["val"]])  # sums to exx
     else:
         data["val"] = data["val"][np.newaxis, :]
     if calc.world.rank == 0:
