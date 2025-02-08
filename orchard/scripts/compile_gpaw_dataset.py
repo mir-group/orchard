@@ -256,8 +256,6 @@ def main():
     if args.exx_only:
         res = compile_exx_dataset(
             settings,
-            args.feat_name,
-            mol_id_code.upper().split("/")[-1],
             mol_ids,
             SAVE_ROOT,
             args.functional,
@@ -265,8 +263,7 @@ def main():
             save_gap_data=args.save_gap_data,
             make_fws=args.make_fws,
             skip_existing=args.skip_existing,
-            save_dir=args.save_dir,
-            kpt_density=args.kpt_density,
+             kpt_density=args.kpt_density,
         )
     else:
         res = compile_dataset(
