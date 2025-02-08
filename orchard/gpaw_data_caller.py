@@ -104,8 +104,8 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False, run_exx=True):
             yaml.dump(data, f, Dumper=yaml.CDumper)
     else:
         return data
-        with paropen(os.path.join(data_dir, "data_no_exx.yaml"), "w") as f:
-            yaml.dump(data, f, Dumper=yaml.CDumper)
+        #with paropen(os.path.join(data_dir, "data_no_exx.yaml"), "w") as f:
+        #    yaml.dump(data, f, Dumper=yaml.CDumper)
 
 
 def arr_to_strk(arr, nspin, p_be):
@@ -127,6 +127,31 @@ def intk_to_strk(d):
         nd[str(k)] = intk_to_strk(v)
     return nd
 
+def find_working_qmax(calc, feat_settings, p_be, initial_qmax=300, step=100, max_qmax=2000):
+    """
+    Tries to find a working qmax value by incrementing from an initial value.
+
+    :param calc: The calculator object.
+    :param feat_settings: Feature settings for the descriptors.
+    :param p_be: The p_be parameter for get_descriptors.
+    :param initial_qmax: The starting qmax value.
+    :param step: The increment step for qmax.
+    :param max_qmax: The maximum qmax value to test.
+    :return: A tuple of (working qmax, res, rho_res).
+    """
+    qmax = initial_qmax
+
+    while qmax <= max_qmax:
+        try:
+            res = get_descriptors(calc, feat_settings, p_i=p_be, qmax=qmax)
+            rho_res = get_descriptors(calc, "l", p_i=p_be, qmax=qmax)
+            print(f"Successfully found working qmax value: {qmax}")
+            return qmax, res, rho_res
+        except Exception as e:
+            print(f"Exception occurred for qmax {qmax}: {e}, trying next qmax")
+            qmax += step
+
+    raise RuntimeError(f"Failed to find a working qmax value up to {max_qmax}")
 
 def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False, kpts_for_exx=None):
     exx_data_path = os.path.join(data_dir, "exx_data.yaml")
@@ -163,7 +188,8 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False,
         res = get_descriptors(calc, feat_settings, p_i=p_be)
         rho_res = get_descriptors(calc, "l", p_i=p_be)
     except Exception as e:
-        raise RuntimeError(f"Failed to get descriptors: {str(e)}. Maybe try changing qmax value.")
+        print(f"Exception occurred in get_descriptors: {e}. Running qmax search...")  # Add this line to print the exception
+        qmax, res, rho_res = find_working_qmax(calc, feat_settings, p_be)
    
     #last_qmax = None
     #last_error_type = None
@@ -224,10 +250,9 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False,
             "nspin": nspin,
         }
     )
-    if data["exx"] is not None:
-        data["val"] = data["exx"] * np.ones_like(all_wt) / (nspin * all_wt.sum())
-    else:
-        data["val"] = np.zeros_like(all_wt)
+
+    data["val"] = data["exx"] * np.ones_like(all_wt) / (nspin * all_wt.sum())
+
     if nspin == 2:
             data["val"] = np.stack([data["val"], data["val"]])  # sums to exx
     else:
