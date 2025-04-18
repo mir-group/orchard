@@ -508,7 +508,7 @@ def main():
                 X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
                 #DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
                 #DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
-                val_pca = analyze_cov(X1)
+                #val_pca = analyze_cov(X1)
                 #analyze_cov(DXO1, avg_and_std=val_pca[:2])
                 #analyze_cov(DXU1, avg_and_std=val_pca[:2])
                 #deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])

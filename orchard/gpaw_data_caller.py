@@ -30,6 +30,7 @@ from pyscf.lib import chkfile
 from ciderpress.gpaw.descriptors import get_descriptors
 #import traceback
 
+#mabdallah TODO: might add an option here for run_rs_exx to get range separated EXX, should default to False
 def get_exx(data_dir, calc, kpts, save_gap_data=False, run_exx=True):
     """
     :param save_dir:
@@ -46,7 +47,7 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False, run_exx=True):
     #    pass
     # elif not isinstance(solver, str) or solver.lower() == 'cg':
     #    calc.set(parallel={'domain': 1, 'band': 1})
-    calc.get_potential_energy()
+    #calc.get_potential_energy()
     if save_gap_data:
         from ase.dft.bandgap import bandgap
 
@@ -56,6 +57,7 @@ def get_exx(data_dir, calc, kpts, save_gap_data=False, run_exx=True):
     else:
         p_be = None
     data = {}
+    #mabdallah TODO: might add condition run_rs_exx to get range separated EXX
     if run_exx:
         eterms = non_self_consistent_energy(calc, "EXX")
         data["exx"] = eterms[3:].sum() / Ha
@@ -127,6 +129,7 @@ def intk_to_strk(d):
         nd[str(k)] = intk_to_strk(v)
     return nd
 
+#mabdallah TODO: this is a temporary function, I don't think it will be needed in the future
 def find_working_qmax(calc, feat_settings, p_be, initial_qmax=300, step=100, max_qmax=2000):
     """
     Tries to find a working qmax value by incrementing from an initial value.
