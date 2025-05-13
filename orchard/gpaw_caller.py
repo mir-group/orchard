@@ -23,7 +23,9 @@ from ase import Atoms
 from ase.units import Bohr, Ha
 from gpaw import CG, GPAW, PW, RMMDIIS, Davidson
 
-
+# TODO: 25-05-02 This script seems to be too old. 
+# First, Replace CiderGGAPASDW.from_joblib to get_cider_functional. 
+# Also, other places are probably outdated either.
 def setup_gpaw(settings_inp, calc=None):
     settings = settings_inp["calc"]
     control = settings_inp["control"]
