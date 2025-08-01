@@ -107,15 +107,19 @@ def compile_single_system(
     else:
         spinpol = False
     if settings == "l":
-        values = analyzer.get("ex_energy_density")
+        values = analyzer.get("ex_energy_density", error_if_missing=False)
         # TODO need to be able to generate reference data for range-separated exchange
         # This function will fetch the range-separated exact exchange from the analysis
         # values = analyzer.get_rs(omega)
         weights = analyzer.grids.weights
         coords = analyzer.grids.coords
         if spinpol:
+            if values is None or values.shape[-1] != weights.size:
+                values = [np.zeros(weights.size), np.zeros(weights.size)]
             values = np.stack([values[0], values[1]])
         else:
+            if values is None or values.shape[-1] != weights.size:
+                values = np.zeros(weights.size)
             values = values[np.newaxis, :]
         data = {
             "coord": coords,
@@ -135,6 +139,13 @@ def compile_single_system(
         if save_baselines:
             data["xc_orig"] = analyzer.get("xc_orig")
             data["exc_orig"] = analyzer.get("exc_orig")
+            """
+            if False:
+                # TODO need to remove this, just for testing
+                from dftd4.pyscf import DFTD4Dispersion as DFTD4
+                print("XC ORIG", data["xc_orig"])
+                data["exc_orig"] += DFTD4(analyzer.mol, xc=data["xc_orig"]).kernel()[0]
+            """
             data["e_tot_orig"] = analyzer.get("e_tot_orig")
     else:
         data = {

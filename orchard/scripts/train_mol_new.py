@@ -27,11 +27,11 @@ from argparse import ArgumentParser
 
 import numpy as np
 import yaml
+from ciderpress.dft.baselines import BASELINE_CODES
 from ciderpress.dft.settings import LDA_FACTOR, FeatureSettings
 from ciderpress.dft.transform_data import FeatureList
-from ciderpress.models.baselines import BASELINE_CODES
-from ciderpress.models.dft_kernel import DFTKernel
-from ciderpress.models.train import MOLGP, strk_to_tuplek
+from ciderpress.models.dft_kernel import DFTKernel, DFTKernel2
+from ciderpress.models.train import MOLGP, MOLGP2, strk_to_tuplek
 from joblib import dump, load
 
 from orchard.workflow_utils import load_rxns
@@ -124,6 +124,7 @@ def parse_settings(set0, data_settings, args):
             feat_name,
         )
         fname = os.path.join(dname, "{}_settings.yaml".format(set0))
+        print(fname)
         with open(fname, "r") as f:
             settings_dict[feat_type] = yaml.load(f, Loader=yaml.CLoader)[
                 "FEAT_SETTINGS"
@@ -137,7 +138,7 @@ def parse_settings(set0, data_settings, args):
         sl_settings=settings_dict["SL"],
         nldf_settings=settings_dict["NLDF"],
         nlof_settings=settings_dict["NLOF"],
-        sadm_settings=settings_dict["SDMX"],
+        sdmx_settings=settings_dict["SDMX"],
         hyb_settings=settings_dict["HYB"],
         normalizers=normalizers,
     )
@@ -186,10 +187,17 @@ def parse_dataset_for_ctrl(fname, n, args, data_settings, feat_settings):
     GXUlist = []
     ylist = []
     for mol_id in mol_ids:
-        data = MOLGP.load_data(dirnames, mol_id, None, "new")
+        data = MOLGP.load_data(dirnames, mol_id, None)
         cond = data["desc"][:, 0, :] > args.density_cutoff
-        print(data["desc"].shape, data["val"].shape)
-        y = data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3)) - 1
+        print(mol_id, data["desc"].shape, data["val"].shape, data["wt"].shape)
+        print(cond.shape, data["val"].shape, data["desc"].shape)
+        try:
+            y = (
+                data["val"][cond] / (LDA_FACTOR * data["desc"][:, 0][cond] ** (4.0 / 3))
+                - 1
+            )
+        except IndexError:
+            y = np.zeros(cond.sum(), dtype=np.float64)
         cond = np.all(cond, axis=0)
         desc = data["desc"][:, :, cond]
         X = feat_settings.normalizers.get_normalized_feature_vector(desc)
@@ -379,6 +387,32 @@ def main():
         help="If path exists, load this model and refit (possibly with new "
         "weights on datasets) while ignoring other parameters.",
     )
+    parser.add_argument(
+        "--version2",
+        action="store_true",
+        help="Use the MOLGP2 object for training, which uses libxc-based, "
+        "spin-polarization-aware baseline functionals. Preferred for full XC "
+        "models.",
+    )
+    parser.add_argument(
+        "--ueg-file",
+        type=str,
+        default=None,
+        help="If --ueg-file is the name of a yaml file that exists on the "
+        "system, read it and use it to fit the uniform electron gas. The "
+        "ueg-file should be a list of dictionaries, where each dictionary "
+        "has the entries 'mode' (0 for X, 1 for C, 2 for XC); 'rho', which "
+        "is a numpy array or scalar of densities at which to evaluate the UEG; "
+        "'zeta' (optional), an array of spin polarization of the same shape as "
+        "rho; 'xc_code', the ground truth functional in libxc (defaults to "
+        "LDA_X for mode=0, LDA_C_PW_MOD for mode=1, and LDA_X+LDA_C_PW_MOD "
+        "for mode=2. If omega is specified and xc_code is not, LDA_X is "
+        "replaced with LDA_X_ERF); 'rel_noise' (optional), the relative noise "
+        "hyperparameter for the GP training; and 'omega' (optional), the "
+        "range-separation parameter for the exchange in Borh^-1. "
+        "Note that LDA_X_ERF is short-range exchange, and omega should always "
+        "be positive. If you want long-range exchange, use LDA_X-LDA_X_ERF.",
+    )
     args = parser.parse_args()
     if args.debug_model is not None:
         args.debug_model = load(args.debug_model)
@@ -447,13 +481,20 @@ def main():
             feature_list = FeatureList.load(plan["feature_list"])
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
+            kcls = DFTKernel2 if args.version2 else DFTKernel
+            if kcls == DFTKernel:
+                mb = BASELINE_CODES[plan["multiplicative_baseline"]]
+                ab = BASELINE_CODES.get(plan["additive_baseline"])
+            else:
+                mb = plan["multiplicative_baseline"]
+                ab = plan.get("additive_baseline")
             kernels.append(
-                DFTKernel(
+                kcls(
                     None,
                     feature_list,
                     plan["mode"],
-                    BASELINE_CODES[plan["multiplicative_baseline"]],
-                    additive_baseline=BASELINE_CODES.get(plan["additive_baseline"]),
+                    mb,
+                    additive_baseline=ab,
                     ctrl_tol=ctrl_tol,
                     ctrl_nmax=ctrl_nmax,
                     component=plan.get("component"),
@@ -465,20 +506,27 @@ def main():
                 deriv_pca = None
             else:
                 X1 = kernels[-1].X0Tlist_to_X1array(Xlist)
-                DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
-                DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
-                val_pca = analyze_cov(X1)
-                analyze_cov(DXO1, avg_and_std=val_pca[:2])
-                analyze_cov(DXU1, avg_and_std=val_pca[:2])
-                deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
-                lscale = np.std(X1, axis=0)
-                print("SHAPES", X1.shape, yctrl.shape)
+                # DXO1 = get_fd_x1(kernels[-1], GXRlist, GXOlist)
+                # DXU1 = get_fd_x1(kernels[-1], GXRlist, GXUlist)
+                # val_pca = analyze_cov(X1)
+                # analyze_cov(DXO1, avg_and_std=val_pca[:2])
+                # analyze_cov(DXU1, avg_and_std=val_pca[:2])
+                # deriv_pca = analyze_cov(DXU1 - DXO1, avg_and_std=val_pca[:2])
+                val_pca = None
+                deriv_pca = None
+                if X1.ndim == 2:
+                    lscale = np.std(X1, axis=0)
+                else:
+                    lscale = np.std(X1, axis=(0, 1))
+                # print("SHAPES", X1.shape, yctrl.shape)
+            if "scale_override" in plan:
+                scale = np.array(plan.pop("scale_override"))
+            elif args.scale_override is None:
+                scale = np.var(yctrl)
+            else:
+                scale = args.scale_override
             kernel = plan_module.get_kernel(
-                natural_scale=(
-                    np.var(yctrl)
-                    if args.scale_override is None
-                    else args.scale_override
-                ),
+                natural_scale=scale,
                 natural_lscale=lscale,
                 scale_factor=args.scale_mul,
                 lscale_factor=args.length_scale_mul,
@@ -492,7 +540,8 @@ def main():
                 mfunc = None
             mapping_plans.append(mfunc)
 
-        gpr = MOLGP(
+        gpcls = MOLGP2 if args.version2 else MOLGP
+        gpr = gpcls(
             kernels,
             settings,
             libxc_baseline=args.libxc_baseline,
@@ -515,6 +564,33 @@ def main():
             rxn_id_list.append(k)
             rxn_list.append((mode, v))
 
+    if args.ueg_file is not None:
+        ueg_id_list = []
+        with open(args.ueg_file, "r") as f:
+            ueg_list = yaml.load(f, Loader=yaml.CLoader)
+            for ueg_data in ueg_list:
+                rholist = ueg_data["rho"]
+                mode = ueg_data["mode"]
+                zeta = ueg_data.get("zeta", None)
+                omega = ueg_data.get("omega", None)
+                xc_code = ueg_data.get("xc_code", None)
+                rel_noise = ueg_data.get("rel_noise", 1e-8)
+                if xc_code is None:
+                    if mode == 0:
+                        xc_code = "LDA_X"
+                    elif mode == 1:
+                        xc_code = "LDA_C_PW_MOD"
+                    elif mode == 2:
+                        xc_code = "LDA_X+LDA_C_PW_MOD"
+                    else:
+                        raise ValueError
+                    if omega is not None:
+                        xc_code = xc_code.replace("LDA_X", "LDA_X_ERF")
+                ueg_id_list = ueg_id_list + gpr.add_ueg_reactions(
+                    rholist, zeta, xc_code, mode, omega, rel_noise
+                )
+        rxn_id_list = ueg_id_list + rxn_id_list
+
     if reload_bool:
         gpr.reset_reactions()
     else:
@@ -527,7 +603,6 @@ def main():
             )
 
     gpr.add_reactions(rxn_list)
-
     gpr.fit()
 
     K = gpr.Kcov_

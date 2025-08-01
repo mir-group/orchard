@@ -215,7 +215,13 @@ class SaveSCFResults(FiretaskBase):
 class RunAnalysis(FiretaskBase):
 
     required_params = ["save_root_dir", "system_id"]
-    optional_params = ["grids_level", "cider_kwargs_and_version", "omegas"]
+    optional_params = [
+        "grids_level",
+        "cider_kwargs_and_version",
+        "omegas",
+        "skip_ee_density",
+        "no_overwrite",
+    ]
 
     def get_cider_features(self, analyzer, restricted):
         from ciderpress.density import get_exchange_descriptors2
@@ -228,11 +234,14 @@ class RunAnalysis(FiretaskBase):
         analyzer.set("cider_descriptor_data", descriptor_data)
 
     def run_task(self, fw_spec):
-        from ciderpress.analyzers import ElectronAnalyzer
+        from ciderpress.pyscf.analyzers import ElectronAnalyzer
 
         calc = fw_spec["calc"]
         analyzer = ElectronAnalyzer.from_calc(calc, self.get("grids_level"))
-        analyzer.perform_full_analysis()
+        if self.get("skip_ee_density", False):
+            analyzer.get_rho_data()
+        else:
+            analyzer.perform_full_analysis()
         save_dir = get_save_dir(
             self["save_root_dir"],
             "KS",
@@ -253,7 +262,12 @@ class RunAnalysis(FiretaskBase):
                 omegas = [omegas]
             for omega in omegas:
                 analyzer.get_ee_energy_density_rs(omega)
-        analyzer.dump(save_file)
+        overwrite = not self.get("no_overwrite", False)
+        if overwrite or not os.path.exists(save_file):
+            print("Writing analyzer.")
+            analyzer.dump(save_file)
+        else:
+            print("Skipping write because {} already exists".format(save_file))
 
         return FWAction(stored_data={"save_dir": save_dir})
 
