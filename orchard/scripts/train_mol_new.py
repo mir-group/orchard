@@ -481,6 +481,7 @@ def main():
             feature_list = FeatureList.load(plan["feature_list"])
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
+            omega = plan.get("omega", 0.0)
             kcls = DFTKernel2 if args.version2 else DFTKernel
             if kcls == DFTKernel:
                 mb = BASELINE_CODES[plan["multiplicative_baseline"]]
@@ -498,6 +499,7 @@ def main():
                     ctrl_tol=ctrl_tol,
                     ctrl_nmax=ctrl_nmax,
                     component=plan.get("component"),
+                    omega=omega,
                 )
             )
             if "lscale_override" in plan:
