@@ -481,7 +481,11 @@ def main():
             feature_list = FeatureList.load(plan["feature_list"])
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
-            omega = plan.get("omega", 0.0)
+            omega = plan.get("omega", None)
+            print("omega", omega)
+            # if omega is not 0.0, then we need to use the DFTKernel2 class, otherwise raise error
+            if omega is not None and not args.version2:
+                raise ValueError("omega is not supported for MOLGP")
             kcls = DFTKernel2 if args.version2 else DFTKernel
             if kcls == DFTKernel:
                 mb = BASELINE_CODES[plan["multiplicative_baseline"]]
@@ -489,19 +493,35 @@ def main():
             else:
                 mb = plan["multiplicative_baseline"]
                 ab = plan.get("additive_baseline")
-            kernels.append(
-                kcls(
-                    None,
-                    feature_list,
-                    plan["mode"],
-                    mb,
-                    additive_baseline=ab,
-                    ctrl_tol=ctrl_tol,
-                    ctrl_nmax=ctrl_nmax,
-                    component=plan.get("component"),
-                    omega=omega,
+            if omega is None:
+                print("omega", omega)
+                kernels.append(
+                    kcls(
+                        None,
+                        feature_list,
+                        plan["mode"],
+                        mb,
+                        additive_baseline=ab,
+                        ctrl_tol=ctrl_tol,
+                        ctrl_nmax=ctrl_nmax,
+                        component=plan.get("component"),
+                    )
                 )
-            )
+            else:
+                print("omega", omega)
+                kernels.append(
+                    kcls(
+                        None,
+                        feature_list,
+                        plan["mode"],
+                        mb,
+                        additive_baseline=ab,
+                        ctrl_tol=ctrl_tol,
+                        ctrl_nmax=ctrl_nmax,
+                        component=plan.get("component"),
+                        omega=omega,
+                    )
+                )
             if "lscale_override" in plan:
                 lscale = np.array(plan.pop("lscale_override"))
                 val_pca = None
