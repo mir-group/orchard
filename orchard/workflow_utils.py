@@ -90,6 +90,8 @@ def load_rxns(rxn_list_id, rxndir=None):
 
 
 def read_accdb_structure(struct_id):
+    # replace "=" "." with "_" to find the xyz files
+    struct_id_modified = struct_id.replace('=', '_').replace('.', '_') 
     fname = "{}.xyz".format(os.path.join(ACCDB_ROOT, "Geometries", struct_id))
     with open(fname, "r") as f:
         # print(fname)

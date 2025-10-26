@@ -479,8 +479,28 @@ def main():
             plan_module = get_plan_module(plan_file)
             args.plan_files.append(plan_file)
             feature_list = FeatureList.load(plan["feature_list"])
+            # set and verify slmode for OmegaMap
+            slmode = settings.sl_settings.mode
+            for i, feat in enumerate(feature_list.feat_list):
+                if hasattr(feat, 'slmode'):
+                    original_slmode = feat.slmode
+                    feat.slmode = slmode  # force using settings value
+                    
+                    if original_slmode != slmode:
+                        print(f"WARNING: Feature {i} ({feat.__class__.__name__}) "
+                            f"slmode mismatch!")
+                        print(f"  - featlist.yaml: {original_slmode}")
+                        print(f"  - settings: {slmode}")
+                        print(f"  - Using settings value: {slmode}")
+                    else:
+                        print(f"Feature {i} ({feat.__class__.__name__}): slmode={slmode} ✓")
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
+            omega = plan.get("omega", None)
+            print("omega", omega)
+            # if omega is not 0.0, then we need to use the DFTKernel2 class, otherwise raise error
+            if omega is not None and not args.version2:
+                raise ValueError("omega is not supported for MOLGP")
             kcls = DFTKernel2 if args.version2 else DFTKernel
             if kcls == DFTKernel:
                 mb = BASELINE_CODES[plan["multiplicative_baseline"]]
@@ -488,18 +508,35 @@ def main():
             else:
                 mb = plan["multiplicative_baseline"]
                 ab = plan.get("additive_baseline")
-            kernels.append(
-                kcls(
-                    None,
-                    feature_list,
-                    plan["mode"],
-                    mb,
-                    additive_baseline=ab,
-                    ctrl_tol=ctrl_tol,
-                    ctrl_nmax=ctrl_nmax,
-                    component=plan.get("component"),
+            if omega is None:
+                print("omega", omega)
+                kernels.append(
+                    kcls(
+                        None,
+                        feature_list,
+                        plan["mode"],
+                        mb,
+                        additive_baseline=ab,
+                        ctrl_tol=ctrl_tol,
+                        ctrl_nmax=ctrl_nmax,
+                        component=plan.get("component"),
+                    )
                 )
-            )
+            else:
+                print("omega", omega)
+                kernels.append(
+                    kcls(
+                        None,
+                        feature_list,
+                        plan["mode"],
+                        mb,
+                        additive_baseline=ab,
+                        ctrl_tol=ctrl_tol,
+                        ctrl_nmax=ctrl_nmax,
+                        component=plan.get("component"),
+                        omega=omega,
+                    )
+                )
             if "lscale_override" in plan:
                 lscale = np.array(plan.pop("lscale_override"))
                 val_pca = None
