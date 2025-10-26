@@ -479,6 +479,21 @@ def main():
             plan_module = get_plan_module(plan_file)
             args.plan_files.append(plan_file)
             feature_list = FeatureList.load(plan["feature_list"])
+            # set and verify slmode for OmegaMap
+            slmode = settings.sl_settings.mode
+            for i, feat in enumerate(feature_list.feat_list):
+                if hasattr(feat, 'slmode'):
+                    original_slmode = feat.slmode
+                    feat.slmode = slmode  # force using settings value
+                    
+                    if original_slmode != slmode:
+                        print(f"WARNING: Feature {i} ({feat.__class__.__name__}) "
+                            f"slmode mismatch!")
+                        print(f"  - featlist.yaml: {original_slmode}")
+                        print(f"  - settings: {slmode}")
+                        print(f"  - Using settings value: {slmode}")
+                    else:
+                        print(f"Feature {i} ({feat.__class__.__name__}): slmode={slmode} ✓")
             ctrl_tol = plan.get("ctrl_tol") or 1e-5
             ctrl_nmax = plan.get("ctrl_nmax")
             omega = plan.get("omega", None)
