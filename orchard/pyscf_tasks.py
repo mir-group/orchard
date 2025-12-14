@@ -73,8 +73,12 @@ class SCFCalc(FiretaskBase):
     def run_task(self, fw_spec):
         settings = get_pyscf_settings(self["settings"])
         start_time = time.monotonic()
-        calc = pyscf_caller.setup_calc(Atoms.fromdict(self["struct"]), settings)
-        calc.kernel()
+        try:
+            calc = pyscf_caller.setup_calc(Atoms.fromdict(self["struct"]), settings)
+            calc.kernel()
+        except Exception as e:
+            calc = pyscf_caller.setup_calc(self["struct"], settings)
+            calc.kernel()
         stop_time = time.monotonic()
         if self.get("require_converged") is None:
             self["require_converged"] = True
@@ -91,6 +95,7 @@ class SCFCalc(FiretaskBase):
             "struct": self["struct"],
             "system_id": self["system_id"],
             "wall_time": stop_time - start_time,
+            "basis_name": settings.get("basis_name"),  # Pass through basis name
         }
         return FWAction(update_spec=update_spec)
 
@@ -112,9 +117,12 @@ class LoadSCFCalc(FiretaskBase):
         in_file = os.path.join(load_dir, "run_info.yaml")
         with open(in_file, "r") as f:
             in_data = yaml.load(f, Loader=yaml.Loader)
-        calc = pyscf_caller.setup_calc(
-            Atoms.fromdict(in_data["struct"]), in_data["settings"]
-        )
+        try:
+            calc = pyscf_caller.setup_calc(
+                Atoms.fromdict(in_data["struct"]), in_data["settings"]
+            )
+        except Exception as e:
+            calc = pyscf_caller.setup_calc(in_data["struct"], in_data["settings"])
         calc.e_tot = lib.chkfile.load(hdf5file, "calc/e_tot")
         calc.mo_coeff = lib.chkfile.load(hdf5file, "calc/mo_coeff")
         calc.mo_energy = lib.chkfile.load(hdf5file, "calc/mo_energy")
@@ -168,10 +176,13 @@ class SaveSCFResults(FiretaskBase):
     optional_params = ["no_overwrite", "write_data"]
 
     def run_task(self, fw_spec):
+        # Use basis_name from fw_spec if available, otherwise use the basis from calc
+        basis_for_dir = fw_spec.get("basis_name") or fw_spec["calc"].mol.basis
+        
         save_dir = get_save_dir(
             self["save_root_dir"],
             "KS",
-            fw_spec["calc"].mol.basis,
+            basis_for_dir,
             fw_spec["system_id"],
             functional=fw_spec["method_name"],
         )
@@ -228,7 +239,7 @@ class RunAnalysis(FiretaskBase):
         analyzer.set("cider_descriptor_data", descriptor_data)
 
     def run_task(self, fw_spec):
-        from ciderpress.analyzers import ElectronAnalyzer
+        from ciderpress.pyscf.analyzers import ElectronAnalyzer
 
         calc = fw_spec["calc"]
         analyzer = ElectronAnalyzer.from_calc(calc, self.get("grids_level"))
@@ -295,7 +306,7 @@ def make_etot_firework(
     write_data=None,
     name=None,
 ):
-    struct = struct.todict()
+    #struct = struct.todict()
     t1 = SCFCalc(
         struct=struct,
         settings=settings,

@@ -446,6 +446,7 @@ def main():
         make_fws=args.make_fws,
         skip_existing=args.skip_existing,
         save_dir=args.save_dir,
+        category=args.category,
         **gg_kwargs
     )
     if args.make_fws:
@@ -453,7 +454,10 @@ def main():
 
         launchpad = LaunchPad.auto_load()
         for fw in res:
-            fw = Firework([res[fw]], name=fw)
+            if args.category is not None:
+                fw = Firework([res[fw]], name=fw, spec={"_category": args.category})
+            else:
+                fw = Firework([res[fw]], name=fw)
             print(fw.name)
             launchpad.add_wf(fw)
 

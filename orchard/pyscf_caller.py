@@ -19,6 +19,7 @@
 #
 
 from copy import deepcopy
+import numpy as np
 
 from pyscf import dft, gto, scf
 
@@ -26,6 +27,61 @@ CALC_TYPES = {
     "RKS": dft.rks.RKS,
     "UKS": dft.uks.UKS,
 }
+
+
+def apply_electric_field(calc, field_vector):
+    """
+    Apply an external electric field to the calculation.
+
+    Parameters
+    ----------
+    calc : pyscf.scf object
+        The SCF calculation object
+    field_vector : list or array-like
+        Electric field vector [Ex, Ey, Ez] in atomic units
+
+    Returns
+    -------
+    calc : pyscf.scf object
+        Modified calculation with field applied
+    """
+    if field_vector is None or all(f == 0 for f in field_vector):
+        return calc
+
+    mol = calc.mol
+
+    # Set gauge origin to center of nuclear charge (Q-Chem convention)
+    # This is critical for matching Q-Chem results
+    charges = mol.atom_charges()
+    coords = mol.atom_coords()
+    total_charge = sum(charges)
+    center_of_charge = sum(charges[i] * coords[i] for i in range(mol.natm)) / total_charge
+    mol.set_common_orig(center_of_charge)
+
+    # Original H_core
+    h_core_orig = mol.intor('int1e_kin') + mol.intor('int1e_nuc')
+
+    # Add field contribution with CORRECTED sign
+    # Q-Chem convention uses -E·r for the field interaction
+    field_vector = np.asarray(field_vector)
+
+    # Use appropriate integral based on basis type
+    if mol.cart:
+        dipole_ints = mol.intor('cint1e_r_cart', comp=3)
+    else:
+        dipole_ints = mol.intor('cint1e_r_sph', comp=3)
+
+    # Apply field with CORRECTED sign (-E·r instead of +E·r)
+    h_field = np.einsum('i,ijk->jk', -field_vector, dipole_ints)
+
+    # Total Hamiltonian with field
+    h_total = h_core_orig + h_field
+
+    # Override get_hcore to return modified Hamiltonian
+    calc.get_hcore = lambda *args, **kwargs: h_total
+
+    return calc
+
 
 """
 All PySCF settings supported:
@@ -37,7 +93,8 @@ All PySCF settings supported:
         'radi_method': None or str (func name)
         'remove_linear_dep': bool,
         'mol_format': str
-        'cider_va': bool
+        'cider_va': bool,
+        'electric_field': None or list/array [Ex, Ey, Ez] in a.u.
     },
     'mol' : {
         'basis': str, default 'def2-qzvppd'
@@ -224,6 +281,23 @@ def setup_calc(atoms, settings):
                 calc.mol, xc=d4func.upper().replace(" ", "")
             )
 
+    # Apply fractional occupation if requested (before electric field and Newton)
+    if settings["control"].get("fractional_occ"):
+        calc = scf.addons.frac_occ(calc)
+
+    # Apply smearing if requested (for metals/small-gap systems)
+    if settings["control"].get("smearing"):
+        sigma = settings["control"].get("smearing_sigma", 0.01)
+        method = settings["control"].get("smearing_method", "fermi")
+        calc = scf.addons.smearing_(calc, sigma=sigma, method=method)
+
+    # Apply electric field BEFORE Newton solver
+    # This ensures the field-modified Hamiltonian is used by Newton
+    electric_field = settings["control"].get("electric_field")
+    if electric_field is not None:
+        calc = apply_electric_field(calc, electric_field)
+
+    # Apply Newton solver AFTER field modification
     if settings["control"].get("soscf"):
         calc = calc.newton()
 

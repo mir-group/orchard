@@ -49,6 +49,33 @@ def get_functional_db_name(functional):
 def get_save_dir(root, calc_type, basis, mol_id, functional):
     if functional is not None:
         calc_type = calc_type + "/" + get_functional_db_name(functional)
+    
+    # Handle dict basis (element-specific) by creating a descriptive string
+    if isinstance(basis, dict):
+        # Check if this dict has a special _basis_name key (uniform basis from BSE)
+        if '_basis_name' in basis:
+            # This is a uniform basis loaded via BSE, use the original name
+            basis = basis['_basis_name']
+        # For element-specific basis, create a standardized string representation
+        # This ensures backward compatibility while handling dict basis
+        elif len(basis) == 1:
+            # Single element with specific basis
+            basis_str = list(basis.values())[0]
+            if isinstance(basis_str, str):
+                basis = basis_str
+            else:
+                # Parsed basis data - use a generic name
+                basis = "element_specific"
+        else:
+            # Multiple elements - use a generic name or extract common basis
+            basis_values = [v for v in basis.values() if isinstance(v, str)]
+            if basis_values and all(v == basis_values[0] for v in basis_values):
+                # All elements use the same basis
+                basis = basis_values[0]
+            else:
+                # Mixed basis - use generic name
+                basis = "element_specific"
+    
     return os.path.join(root, calc_type, basis, mol_id)
 
 

@@ -28,6 +28,8 @@ from ase.units import Ha
 from gpaw import restart
 from pyscf.lib import chkfile
 from ciderpress.gpaw.descriptors import get_descriptors
+from ciderpress.gpaw.calculator import CiderGPAW
+
 #import traceback
 
 #mabdallah TODO: might add an option here for run_rs_exx to get range separated EXX, should default to False
@@ -151,7 +153,11 @@ def find_working_qmax(calc, feat_settings, p_be, initial_qmax=300, step=100, max
             print(f"Successfully found working qmax value: {qmax}")
             return qmax, res, rho_res
         except Exception as e:
-            print(f"Exception occurred for qmax {qmax}: {e}, trying next qmax")
+            import traceback
+            print(f"Exception occurred for qmax {qmax}: {e}")
+            print("Full stack trace:")
+            traceback.print_exc()
+            print(f"Trying next qmax...")
             qmax += step
 
     raise RuntimeError(f"Failed to find a working qmax value up to {max_qmax}")
@@ -191,7 +197,11 @@ def save_features(save_file, data_dir, calc, feat_settings, save_gap_data=False,
         res = get_descriptors(calc, feat_settings, p_i=p_be)
         rho_res = get_descriptors(calc, "l", p_i=p_be)
     except Exception as e:
-        print(f"Exception occurred in get_descriptors: {e}. Running qmax search...")  # Add this line to print the exception
+        import traceback
+        print(f"Exception occurred in get_descriptors: {e}")
+        print("Full stack trace:")
+        traceback.print_exc()
+        print("Running qmax search...")
         qmax, res, rho_res = find_working_qmax(calc, feat_settings, p_be)
    
     #last_qmax = None
@@ -281,11 +291,15 @@ def call_gpaw(settings_file=None, settings_dict=None):
             settings_file = sys.argv[1]
         with paropen(settings_file, "r") as f:
             settings = yaml.load(f, Loader=yaml.Loader)
-
+            settings["feat_settings"] = yaml.load(settings["feat_settings"], Loader=yaml.Loader)
     data_dir = settings["data_dir"]
     task = settings["task"]  # should be EXX or FEAT
     feat_settings = settings["feat_settings"] #features settings object
-    atoms, calc = restart(os.path.join(data_dir, "calc.gpw"), txt="-")
+    try:
+        atoms, calc = restart(os.path.join(data_dir, "calc.gpw"), txt="-")
+    except:
+        calc = CiderGPAW(restart=os.path.join(data_dir, "calc.gpw"), txt="-")
+        atoms = calc.get_atoms()
     if task == "EXX":
         get_exx(
             data_dir,

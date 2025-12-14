@@ -3,3 +3,5 @@
 *.err
 *.tmp
 *.xml
+__pycache__/
+*.pyc

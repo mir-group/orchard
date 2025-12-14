@@ -70,7 +70,7 @@ def compile_dataset(
     if not feat_type == "REF":
         if not (isinstance (feat_settings, SemilocalSettings) or isinstance (feat_settings, NLDFSettings)):
             raise NotImplementedError("Only SL Settings and NLDF Settings are supported for GPAW currently.")
-    if basis!="GPAW":
+    if basis!="GPAW" and basis!="GPAW_NEW":
         raise ValueError("Only GPAW basis is supported for compile_gpaw_dataset. Check compile_pyscf_dataset for PySCF.")
    
   #  if save_gap_data:
@@ -222,6 +222,13 @@ def main():
     )
 
     parser.add_argument(
+        "--category",
+        type=str,
+        default=None,
+        help="Category of the firework",
+    )
+
+    parser.add_argument(
         "--skip-existing",
         action="store_true",
         help="skip system if save_file exists already",
@@ -285,7 +292,10 @@ def main():
 
         launchpad = LaunchPad.auto_load()
         for fw in res:
-            fw = Firework([res[fw]], name=fw)
+            if args.category is not None:
+                fw = Firework([res[fw]], name=fw, spec={"_category": args.category})
+            else:
+                fw = Firework([res[fw]], name=fw)
             print(fw.name)
             launchpad.add_wf(fw)
 

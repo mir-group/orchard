@@ -30,6 +30,7 @@ from ciderpress.dft.settings import (
     HybridSettings,
     NLDFSettings,
     SDMXBaseSettings,
+    SDMX1Settings,
     SemilocalSettings,
 )
 from ciderpress.pyscf.analyzers import ElectronAnalyzer, RHFAnalyzer, UHFAnalyzer
@@ -58,7 +59,7 @@ def get_feat_type(settings):
         return "NLDF"
     elif isinstance(settings, FracLaplSettings):
         return "NLOF"
-    elif isinstance(settings, SDMXBaseSettings):
+    elif isinstance(settings, SDMXBaseSettings) or isinstance(settings, SDMX1Settings):
         return "SDMX"
     elif isinstance(settings, HybridSettings):
         return "HYB"
@@ -290,6 +291,13 @@ def main():
         type=str,
         help="override default save directory for features",
     )
+
+    parser.add_argument(
+    "--category",
+    type=str,
+    default=None,
+    help="Category of the firework",
+    )
     args = parser.parse_args()
 
     if args.settings_file is None or args.settings_file == "__REF__":
@@ -326,13 +334,17 @@ def main():
         make_fws=args.make_fws,
         skip_existing=args.skip_existing,
         save_dir=args.save_dir,
+        analysis_level=args.analysis_level,
     )
     if args.make_fws:
         from fireworks import Firework, LaunchPad
 
         launchpad = LaunchPad.auto_load()
         for fw in res:
-            fw = Firework([res[fw]], name=fw)
+            if args.category is not None:
+                fw = Firework([res[fw]], name=fw, spec={"_category": args.category})
+            else:
+                fw = Firework([res[fw]], name=fw)
             print(fw.name)
             launchpad.add_wf(fw)
 
